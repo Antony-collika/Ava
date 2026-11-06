@@ -14,11 +14,12 @@ import okio.BufferedSource
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import android.util.Base64
 import java.util.concurrent.TimeUnit
 
 class ProviderException(message: String) : Exception(message)
 
-class ProviderClient {
+class ProviderClient(private val attachmentStore: AttachmentStore? = null) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -71,9 +72,17 @@ class ProviderClient {
         when (settings.provider) {
             ProviderType.ANTHROPIC -> {
                 val payloadMessages = JSONArray()
-                transcript.forEach { (role, content) ->
-                    payloadMessages.put(JSONObject().put("role", if (role == "assistant") "assistant" else "user")
-                        .put("content", content))
+                contextMessages.forEach { message ->
+                    val blocks = JSONArray()
+                    if (message.content.isNotBlank()) blocks.put(JSONObject().put("type", "text").put("text", message.content))
+                    message.attachments.forEach { attachment ->
+                        val bytes = requireNotNull(attachmentStore) { "Image attachments are unavailable." }.read(attachment)
+                        blocks.put(JSONObject().put("type", "image").put("source", JSONObject()
+                            .put("type", "base64").put("media_type", attachment.mimeType)
+                            .put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))))
+                    }
+                    payloadMessages.put(JSONObject().put("role", if (message.role == "assistant") "assistant" else "user")
+                        .put("content", if (message.attachments.isEmpty()) message.content else blocks))
                 }
                 body = JSONObject().put("model", settings.model).put("max_tokens", 4096)
                     .put("stream", true).put("messages", payloadMessages)
@@ -85,9 +94,17 @@ class ProviderClient {
             }
             ProviderType.GEMINI -> {
                 val contents = JSONArray()
-                transcript.forEach { (role, content) ->
-                    contents.put(JSONObject().put("role", if (role == "assistant") "model" else "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", content))))
+                contextMessages.forEach { message ->
+                    val parts = JSONArray()
+                    if (message.content.isNotBlank()) parts.put(JSONObject().put("text", message.content))
+                    message.attachments.forEach { attachment ->
+                        val bytes = requireNotNull(attachmentStore) { "Image attachments are unavailable." }.read(attachment)
+                        parts.put(JSONObject().put("inlineData", JSONObject()
+                            .put("mimeType", attachment.mimeType)
+                            .put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))))
+                    }
+                    contents.put(JSONObject().put("role", if (message.role == "assistant") "model" else "user")
+                        .put("parts", parts))
                 }
                 val payload = JSONObject().put("contents", contents)
                     .put("generationConfig", JSONObject().put("maxOutputTokens", 4096))
@@ -105,8 +122,17 @@ class ProviderClient {
                 if (settings.systemPrompt.isNotBlank()) {
                     payloadMessages.put(JSONObject().put("role", "system").put("content", settings.systemPrompt))
                 }
-                transcript.forEach { (role, content) ->
-                    payloadMessages.put(JSONObject().put("role", role).put("content", content))
+                contextMessages.forEach { message ->
+                    val content: Any = if (message.attachments.isEmpty()) message.content else JSONArray().apply {
+                        if (message.content.isNotBlank()) put(JSONObject().put("type", "text").put("text", message.content))
+                        message.attachments.forEach { attachment ->
+                            val bytes = requireNotNull(attachmentStore) { "Image attachments are unavailable." }.read(attachment)
+                            put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put(
+                                "url", "data:${attachment.mimeType};base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+                            )))
+                        }
+                    }
+                    payloadMessages.put(JSONObject().put("role", message.role).put("content", content))
                 }
                 body = JSONObject().put("model", settings.model).put("stream", true)
                     .put("messages", payloadMessages).toString()
