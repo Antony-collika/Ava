@@ -26,7 +26,9 @@ data class ToolControl(
 object AvaTools {
     private fun schema(vararg fields: Pair<String, String>): JSONObject {
         val properties = JSONObject()
-        fields.forEach { (name, type) -> properties.put(name, JSONObject().put("type", type)) }
+        fields.forEach { (name, type) -> properties.put(name, JSONObject().put("type", type).apply {
+            if (type == "array") put("items", JSONObject().put("type", "string"))
+        }) }
         return JSONObject().put("type", "object").put("properties", properties)
             .put("required", JSONArray(fields.map { it.first }))
     }
@@ -61,6 +63,8 @@ object AvaTools {
         ToolDefinition("ava.web.read", "read_webpage", "Read and extract readable text from an HTTPS webpage.", parameters = schema("url" to "string")),
         ToolDefinition("ava.web.search", "search_web", "Search the web using the configured Brave Search API key.", parameters = schema("query" to "string")),
         ToolDefinition("ava.clipboard.write", "copy_to_clipboard", "Write text to the device clipboard. Clipboard reading is not available.", true, parameters = schema("text" to "string")),
+        ToolDefinition("ava.alarm.set", "set_alarm", "Open the system alarm UI to create an alarm.", true, parameters = schema("hour" to "integer", "minute" to "integer", "message" to "string")),
+        ToolDefinition("ava.calendar.create", "create_calendar_event", "Open the system calendar UI to create an event.", true, parameters = schema("title" to "string", "start_epoch_millis" to "integer", "end_epoch_millis" to "integer", "description" to "string", "location" to "string")),
         ToolDefinition("ava.fs.replace_many", "replace_text_many_files", "Find and replace exact text across multiple files.", true, parameters = schema("paths" to "array", "old_text" to "string", "new_text" to "string")),
         ToolDefinition("ava.fs.count", "count_text", "Count words, lines and characters in a text file.", parameters = schema("path" to "string")),
         ToolDefinition("ava.fs.compare", "compare_files", "Compare two text files line by line.", parameters = schema("first" to "string", "second" to "string")),
@@ -160,6 +164,8 @@ class WorkspaceToolRuntime(
             "ava.todo.complete" -> "Complete task " + arguments.optString("id")
             "ava.todo.delete" -> "Delete task " + arguments.optString("id")
             "ava.clipboard.write" -> "Copy text to device clipboard"
+            "ava.alarm.set" -> "Open alarm setup for " + arguments.optInt("hour") + ":" + arguments.optInt("minute")
+            "ava.calendar.create" -> "Create calendar event: " + arguments.optString("title")
             "ava.fs.delete" -> "Delete " + path
             "ava.fs.replace_many" -> "Replace text across " + arguments.optJSONArray("paths")?.length() + " files"
             "ava.csv.sort", "ava.csv.add", "ava.csv.edit", "ava.json.format", "ava.json.set",
