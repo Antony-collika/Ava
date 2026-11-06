@@ -728,6 +728,10 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore
             }
             Text("UIDs and original descriptions are fixed. The model sees only enabled tools and their customized names/descriptions.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val invalidAliases = store.invalidControls(provider)
+            if (invalidAliases.isNotEmpty()) Text(
+                invalidAliases.size.toString() + " tool alias(es) are incompatible with " + provider.label + " and will be omitted from requests. Edit those names below.",
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             controls.forEach { control ->
                 val definition = AvaTools.definitions.first { it.uid == control.uid }
                 Divider(Modifier.padding(vertical = 8.dp))
@@ -764,7 +768,10 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore
             title = { Text("Customize tool for the model") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = editingName, onValueChange = { editingName = it },
+                    OutlinedTextField(value = editingName, onValueChange = {
+                        editingName = it
+                        validationError = editingUid?.let { uid -> store.validateName(uid, it, provider) }
+                    },
                         label = { Text("Model tool name") }, singleLine = true)
                     OutlinedTextField(value = editingDescription, onValueChange = { editingDescription = it },
                         label = { Text("Model description") }, minLines = 3)
