@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.animateScrollToItem
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.antonycollika.ava.SecureKeyStore
@@ -242,8 +249,13 @@ fun AvaApp(
                             }
                         }
                     } else {
+                        val listState = rememberLazyListState()
+                        LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
+                            if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+                        }
                         LazyColumn(
-                            Modifier.weight(1f).fillMaxWidth(),
+                            state = listState,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
@@ -312,13 +324,46 @@ private fun MessageBubble(message: ChatMessage) {
         ) {
             SelectionContainer {
                 Text(
-                    text = message.content.ifBlank { " " },
+                    text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
                     modifier = Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     lineHeight = MaterialTheme.typography.bodyLarge.lineHeight
                 )
             }
         }
+    }
+}
+
+private fun renderBasicMarkdown(source: String) = buildAnnotatedString {
+    val tick = 96.toChar().toString()
+    val inlinePattern = Regex("(\\*\\*.+?\\*\\*|" + tick + "[^" + tick + "]+" + tick + ")")
+    val lines = source.lines()
+    lines.forEachIndexed { lineIndex, line ->
+        val headingLevel = line.takeWhile { it == '#' }.length.coerceAtMost(3)
+        val content = if (headingLevel > 0) line.drop(headingLevel).trimStart() else line
+        if (headingLevel > 0) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = (22 - headingLevel * 2).sp)) {
+                append(content)
+            }
+        } else {
+            var cursor = 0
+            inlinePattern.findAll(content).forEach { match ->
+                append(content.substring(cursor, match.range.first))
+                val token = match.value
+                if (token.startsWith("**")) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(token.removePrefix("**").removeSuffix("**"))
+                    }
+                } else {
+                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFF292832))) {
+                        append(" " + token.removePrefix(tick).removeSuffix(tick) + " ")
+                    }
+                }
+                cursor = match.range.last + 1
+            }
+            append(content.substring(cursor))
+        }
+        if (lineIndex < lines.lastIndex) append('\n')
     }
 }
 
