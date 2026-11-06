@@ -384,6 +384,8 @@ fun AvaApp(
                                             MessageAction.BRANCH -> branchAt(messageIndex)
                                             MessageAction.DELETE -> {
                                                 val before = messages.toList()
+                                                val deletedConversationId = activeId
+                                                val deletedConversation = conversations.firstOrNull { it.id == deletedConversationId }
                                                 val after = ConversationOperations.deleteTurn(before, messageIndex)
                                                 if (after != before) {
                                                     messages.clear(); messages.addAll(after); persist()
@@ -393,7 +395,21 @@ fun AvaApp(
                                                             withDismissAction = true, duration = SnackbarDuration.Short
                                                         )
                                                         if (result == SnackbarResult.ActionPerformed) {
-                                                            messages.clear(); messages.addAll(before); persist()
+                                                            val restored = Conversation(
+                                                                id = deletedConversationId,
+                                                                title = deletedConversation?.title
+                                                                    ?: before.firstOrNull { it.role == "user" }?.content?.take(42).orEmpty().ifBlank { "New chat" },
+                                                                messages = before,
+                                                                updatedAt = System.currentTimeMillis()
+                                                            )
+                                                            conversationStore.save(restored)
+                                                            val restoredIndex = conversations.indexOfFirst { it.id == deletedConversationId }
+                                                            if (restoredIndex >= 0) conversations[restoredIndex] = restored
+                                                            else conversations.add(0, restored)
+                                                            if (activeId == deletedConversationId) {
+                                                                messages.clear()
+                                                                messages.addAll(before)
+                                                            }
                                                         }
                                                     }
                                                 }
