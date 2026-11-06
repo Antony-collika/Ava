@@ -100,6 +100,9 @@ fun AvaApp(
     val inChatMatches = if (inChatSearch.isBlank()) emptyList() else messageSnapshot.mapIndexedNotNull { index, message ->
         if (message.content.contains(inChatSearch, ignoreCase = true)) index else null
     }
+    LaunchedEffect(messageSnapshot.lastOrNull()?.id, messageSnapshot.lastOrNull()?.content, inChatSearchVisible) {
+        if (!inChatSearchVisible && messageSnapshot.isNotEmpty()) listState.animateScrollToItem(messageSnapshot.lastIndex)
+    }
     LaunchedEffect(pendingJumpMessageId, messageSnapshot) {
         val target = pendingJumpMessageId ?: return@LaunchedEffect
         val index = messageSnapshot.indexOfFirst { it.id == target }
@@ -451,6 +454,12 @@ fun AvaApp(
                                                             withDismissAction = true, duration = SnackbarDuration.Short
                                                         )
                                                         if (result == SnackbarResult.ActionPerformed) {
+                                                            val currentMessages = conversations.firstOrNull { it.id == deletedConversationId }?.messages
+                                                            val canUndo = currentMessages == after || (after.isEmpty() && currentMessages == null)
+                                                            if (!canUndo) {
+                                                                snackbarHostState.showSnackbar("Conversation changed; undo was skipped.")
+                                                                return@launch
+                                                            }
                                                             val restored = Conversation(
                                                                 id = deletedConversationId,
                                                                 title = deletedConversation?.title
@@ -549,12 +558,15 @@ fun AvaApp(
                             historySearch.isBlank() || conversation.title.contains(historySearch, true) ||
                                 conversation.messages.any { it.content.contains(historySearch, true) }
                         }.forEach { conversation ->
+                            val matchingMessage = if (historySearch.isBlank()) null else conversation.messages.firstOrNull { it.content.contains(historySearch, true) }
                             Row(Modifier.fillMaxWidth().clickable {
                                 cancelGeneration()
                                 activeId = conversation.id
                                 messages.clear()
                                 messages.addAll(conversation.messages)
                                 pendingJumpMessageId = matchingMessage?.id
+                                inChatSearch = historySearch
+                                inChatSearchVisible = historySearch.isNotBlank()
                                 errorMessage = null
                                 showHistory = false
                             }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
