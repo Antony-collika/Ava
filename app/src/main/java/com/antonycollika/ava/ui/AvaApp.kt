@@ -45,6 +45,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.antonycollika.ava.SecureKeyStore
 import com.antonycollika.ava.data.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -70,6 +71,9 @@ fun AvaApp(
     var showHistory by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var workspaceMessage by remember { mutableStateOf<String?>(null) }
+    var pendingToolExecution by remember { mutableStateOf<ToolExecution?>(null) }
+    var pendingToolDecision by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
+    val toolRuntime = remember(workspaceStore, toolRegistryStore) { WorkspaceToolRuntime(workspaceStore, toolRegistryStore) }
     val workspacePicker = rememberLauncherForActivityResult(OpenDocumentTree()) { uri ->
         if (uri != null) runCatching { workspaceStore.selectWorkspace(uri) }
             .onSuccess { workspaceMessage = "Workspace folder selected." }
@@ -140,6 +144,9 @@ fun AvaApp(
     fun cancelGeneration(persistPartial: Boolean = true) {
         activeRunId = null
         generationJob?.cancel()
+        pendingToolDecision?.cancel()
+        pendingToolDecision = null
+        pendingToolExecution = null
         sending = false
         if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) {
             messages.removeAt(messages.lastIndex)
@@ -174,19 +181,51 @@ fun AvaApp(
         generationJob = scope.launch {
             val answer = StringBuilder()
             try {
-                providerClient.stream(settings, key, requestHistory).collect { chunk ->
-                    if (activeRunId == runId) {
-                        answer.append(chunk)
-                        val index = messages.indexOfLast { it.role == "assistant" }
-                        if (index >= 0) {
-                            messages[index] = messages[index].copy(content = answer.toString())
+                ToolLoopRunner(providerClient).run(
+                    settings = settings,
+                    apiKey = key,
+                    initialMessages = requestHistory,
+                    registry = toolRegistryStore,
+                    runtime = toolRuntime,
+                    toolsAvailable = workspaceStore.hasAccess(),
+                    confirm = { execution ->
+                        val decision = CompletableDeferred<Boolean>()
+                        pendingToolExecution = execution
+                        pendingToolDecision = decision
+                        decision.await()
+                    },
+                    onText = { chunk ->
+                        if (activeRunId == runId) {
+                            answer.append(chunk)
+                            val index = messages.indexOfLast { it.role == "assistant" }
+                            if (index >= 0) messages[index] = messages[index].copy(content = messages[index].content + chunk)
                             persist()
                         }
-                    }
-                }
-                if (activeRunId == runId && answer.isEmpty()) {
+                    },
+                    onAssistantToolCalls = { assistant ->
+                        if (activeRunId == runId) {
+                            val index = messages.indexOfLast { it.role == "assistant" }
+                            if (index >= 0 && messages[index].content.isBlank() && messages[index].toolCalls.isEmpty()) messages[index] = assistant
+                            else messages.add(assistant)
+                            persist()
+                        }
+                    },
+                    onToolResult = { toolMessage ->
+                        if (activeRunId == runId) { messages.add(toolMessage); persist() }
+                    },
+                    onToolRoundComplete = {
+                        if (activeRunId == runId) {
+                            messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
+                            persist()
+                        }
+                    },
+                    onToolStatus = { status -> workspaceMessage = status }
+                )
+                if (activeRunId == runId && answer.isEmpty() && messages.lastOrNull()?.toolCalls.isNullOrEmpty()) {
                     errorMessage = "The provider returned no text. Check the selected model and provider settings."
-                    if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) messages.removeAt(messages.lastIndex)
+                }
+                if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() && it.toolCalls.isEmpty() } == true) {
+                    messages.removeAt(messages.lastIndex)
                 }
             } catch (failure: Throwable) {
                 if (activeRunId == runId && failure !is kotlinx.coroutines.CancellationException) {
@@ -516,6 +555,13 @@ fun AvaApp(
             }
         }
 
+        if (pendingToolExecution != null) {
+            val pending = pendingToolExecution!!
+            AlertDialog(onDismissRequest = { pendingToolDecision?.complete(false); pendingToolDecision = null; pendingToolExecution = null },
+                title = { Text("Allow this tool action?") }, text = { Text(pending.confirmationSummary) },
+                confirmButton = { TextButton(onClick = { pendingToolDecision?.complete(true); pendingToolDecision = null; pendingToolExecution = null }) { Text("Allow") } },
+                dismissButton = { TextButton(onClick = { pendingToolDecision?.complete(false); pendingToolDecision = null; pendingToolExecution = null }) { Text("Deny") } })
+        }
         if (showTools) ToolSettingsSheet(toolRegistryStore, onDismiss = { showTools = false })
         if (pendingRegenerationIndex != null) {
             AlertDialog(
