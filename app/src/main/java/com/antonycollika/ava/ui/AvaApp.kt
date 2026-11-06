@@ -89,8 +89,22 @@ fun AvaApp(
     var renameConversationId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var historySearch by remember { mutableStateOf("") }
+    var inChatSearchVisible by remember { mutableStateOf(false) }
+    var inChatSearch by remember { mutableStateOf("") }
+    var searchMatchIndex by remember { mutableIntStateOf(0) }
+    var pendingJumpMessageId by remember { mutableStateOf<String?>(null) }
     var darkTheme by remember { mutableStateOf(settingsStore.loadDarkTheme()) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
+    val messageSnapshot = messages.toList()
+    val inChatMatches = if (inChatSearch.isBlank()) emptyList() else messageSnapshot.mapIndexedNotNull { index, message ->
+        if (message.content.contains(inChatSearch, ignoreCase = true)) index else null
+    }
+    LaunchedEffect(pendingJumpMessageId, messageSnapshot) {
+        val target = pendingJumpMessageId ?: return@LaunchedEffect
+        val index = messageSnapshot.indexOfFirst { it.id == target }
+        if (index >= 0) { listState.animateScrollToItem(index); pendingJumpMessageId = null }
+    }
     val scope = rememberCoroutineScope()
 
     fun persist() {
@@ -282,6 +296,7 @@ fun AvaApp(
                             IconButton(onClick = { darkTheme = !darkTheme; settingsStore.saveDarkTheme(darkTheme) }) {
                                 Text(if (darkTheme) "☼" else "☾")
                             }
+                            IconButton(onClick = { inChatSearchVisible = !inChatSearchVisible; inChatSearch = "" }) { Text("⌕") }
                             IconButton(onClick = ::startNewChat) {
                                 Icon(Icons.Default.Add, contentDescription = "New chat")
                             }
@@ -348,6 +363,15 @@ fun AvaApp(
                 }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding)) {
+                    if (inChatSearchVisible) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(value = inChatSearch, onValueChange = { inChatSearch = it; searchMatchIndex = 0 },
+                                modifier = Modifier.weight(1f), singleLine = true, placeholder = { Text("Find in this chat") })
+                            Text("${if (inChatMatches.isEmpty()) 0 else searchMatchIndex + 1}/${inChatMatches.size}", modifier = Modifier.padding(horizontal = 6.dp))
+                            IconButton(onClick = { if (inChatMatches.isNotEmpty()) { searchMatchIndex = (searchMatchIndex - 1).mod(inChatMatches.size); scope.launch { listState.animateScrollToItem(inChatMatches[searchMatchIndex]) } } }) { Text("↑") }
+                            IconButton(onClick = { if (inChatMatches.isNotEmpty()) { searchMatchIndex = (searchMatchIndex + 1).mod(inChatMatches.size); scope.launch { listState.animateScrollToItem(inChatMatches[searchMatchIndex]) } } }) { Text("↓") }
+                        }
+                    }
                     errorMessage?.let { message ->
                         Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
                             Text(message, color = MaterialTheme.colorScheme.onErrorContainer,
@@ -388,6 +412,7 @@ fun AvaApp(
                                 MessageBubble(
                                     message = message,
                                     attachmentStore = attachmentStore,
+                                    highlightQuery = inChatSearch,
                                     enabled = !sending,
                                     editing = editingMessageId == message.id,
                                     editText = editingText,
@@ -529,13 +554,14 @@ fun AvaApp(
                                 activeId = conversation.id
                                 messages.clear()
                                 messages.addAll(conversation.messages)
+                                pendingJumpMessageId = matchingMessage?.id
                                 errorMessage = null
                                 showHistory = false
                             }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(conversation.title, maxLines = 1, style = MaterialTheme.typography.bodyLarge)
-                                    Text("${conversation.messages.size} messages",
-                                        style = MaterialTheme.typography.labelSmall,
+                                    Text(matchingMessage?.content?.let { excerptAround(it, historySearch) } ?: "${conversation.messages.size} messages",
+                                        style = MaterialTheme.typography.labelSmall, maxLines = 2,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 IconButton(onClick = {
@@ -568,6 +594,7 @@ private enum class MessageAction { EDIT, EDIT_AND_REGENERATE, REGENERATE, BRANCH
 private fun MessageBubble(
     message: ChatMessage,
     attachmentStore: AttachmentStore,
+    highlightQuery: String,
     enabled: Boolean,
     editing: Boolean,
     editText: String,
@@ -613,7 +640,7 @@ private fun MessageBubble(
                             Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
                     }
                     SelectionContainer {
-                        Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
+                        Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }, highlightQuery) },
                             style = MaterialTheme.typography.bodyLarge, lineHeight = MaterialTheme.typography.bodyLarge.lineHeight)
                     }
                 }
@@ -654,7 +681,15 @@ private fun MessageBubble(
     }
 }
 
-private fun renderBasicMarkdown(source: String) = buildAnnotatedString {
+private fun excerptAround(text: String, query: String): String {
+    val index = text.indexOf(query, ignoreCase = true)
+    if (index < 0) return text.take(90)
+    val start = (index - 35).coerceAtLeast(0)
+    val end = (index + query.length + 55).coerceAtMost(text.length)
+    return (if (start > 0) "…" else "") + text.substring(start, end) + if (end < text.length) "…" else ""
+}
+
+private fun renderBasicMarkdown(source: String, highlightQuery: String = "") = buildAnnotatedString {
     val tick = 96.toChar().toString()
     val inlinePattern = Regex("(\\*\\*.+?\\*\\*|" + tick + "[^" + tick + "]+" + tick + ")")
     val lines = source.lines()
