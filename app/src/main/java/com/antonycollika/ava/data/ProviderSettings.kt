@@ -18,10 +18,10 @@ class ProviderSettingsStore(context: Context) {
         return ProviderSettings(
             provider = provider,
             model = prefs.getString("model_$suffix", null)?.takeIf(String::isNotBlank)
-                ?: prefs.getString("model", null)?.takeIf { providerOverride == null && String::isNotBlank(it) }
+                ?: prefs.getString("model", null)?.takeIf { providerOverride == null && it.isNotBlank() }
                 ?: provider.defaultModel,
             baseUrl = prefs.getString("base_url_$suffix", null)?.takeIf(String::isNotBlank)
-                ?: prefs.getString("base_url", null)?.takeIf { providerOverride == null && String::isNotBlank(it) }
+                ?: prefs.getString("base_url", null)?.takeIf { providerOverride == null && it.isNotBlank() }
                 ?: provider.defaultBaseUrl,
             systemPrompt = prefs.getString("system_prompt_$suffix", null)
                 ?: prefs.getString("system_prompt", "")?.takeIf { providerOverride == null }
