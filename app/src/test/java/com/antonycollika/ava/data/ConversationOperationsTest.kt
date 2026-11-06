@@ -12,7 +12,7 @@ class ConversationOperationsTest {
     @Test fun branchCopiesOnlyThroughSelectedMessage() {
         val source = listOf(message("user", "u1"), message("assistant", "a1"), message("user", "u2"))
         assertEquals(source.take(2), ConversationOperations.branchPrefix(source, 1))
-        assertEquals(source, ConversationOperations.branchPrefix(source, 9))
+        assertEquals(emptyList<ChatMessage>(), ConversationOperations.branchPrefix(source, 9))
     }
 
     @Test fun regenerationFindsOwningUserTurnAndDetectsSuffix() {
