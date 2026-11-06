@@ -205,6 +205,9 @@ fun AvaApp(
                                                         }
                                                         if (activeRunId == runId && answer.isEmpty()) {
                                                             errorMessage = "The provider returned no text. Check the selected model and provider settings."
+                                                            if (messages.lastOrNull()?.role == "assistant" && messages.last().content.isBlank()) {
+                                                                messages.removeAt(messages.lastIndex)
+                                                            }
                                                         }
                                                     } catch (failure: Throwable) {
                                                         if (activeRunId == runId && failure !is kotlinx.coroutines.CancellationException) {
