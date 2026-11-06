@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.antonycollika.ava.SecureKeyStore
 import com.antonycollika.ava.data.*
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.util.UUID
 
