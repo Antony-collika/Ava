@@ -761,7 +761,15 @@ private fun MessageBubble(
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
         if (message.edited) Text("edited", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (editing) {
+        if (message.role == "tool") {
+            Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Tool result · " + (message.toolUid ?: "unknown"), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text(message.content, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        } else if (editing) {
             Surface(
                 color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()
@@ -783,7 +791,11 @@ private fun MessageBubble(
                 modifier = Modifier.widthIn(max = 680.dp)
             ) {
                 Column(Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp)) {
-                    message.attachments.forEach { attachment ->
+                    if (message.toolCalls.isNotEmpty()) {
+                    Text("Called " + message.toolCalls.joinToString { it.modelName },
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                message.attachments.forEach { attachment ->
                         val bitmap = remember(attachment.id) {
                             attachmentStore.file(attachment)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
                         }
