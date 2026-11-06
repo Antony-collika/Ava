@@ -47,7 +47,20 @@ object AvaTools {
         ToolDefinition("ava.fs.rename", "rename_path", "Rename a file or directory.", true, parameters = schema("path" to "string", "new_name" to "string")),
         ToolDefinition("ava.fs.delete", "delete_path", "Delete a file or directory after explicit confirmation.", true, true, schema("path" to "string")),
         ToolDefinition("ava.fs.zip", "zip_path", "Create a ZIP archive from a workspace path.", true, parameters = schema("source" to "string", "destination" to "string")),
-        ToolDefinition("ava.fs.unzip", "unzip_archive", "Extract a ZIP archive into a workspace folder.", true, parameters = schema("archive" to "string", "destination" to "string"))
+        ToolDefinition("ava.fs.unzip", "unzip_archive", "Extract a ZIP archive into a workspace folder.", true, parameters = schema("archive" to "string", "destination" to "string")),
+        ToolDefinition("ava.memory.add", "save_note", "Save a durable local note for future conversations.", true, parameters = schema("title" to "string", "content" to "string")),
+        ToolDefinition("ava.memory.list", "list_notes", "List saved local notes.", parameters = schema()),
+        ToolDefinition("ava.memory.search", "search_notes", "Search saved local notes.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.todo.add", "add_todo", "Add an item to the local task list.", true, parameters = schema("title" to "string")),
+        ToolDefinition("ava.todo.list", "list_todos", "List local tasks and their status.", parameters = schema()),
+        ToolDefinition("ava.todo.complete", "complete_todo", "Mark a task as completed.", true, parameters = schema("id" to "string")),
+        ToolDefinition("ava.todo.delete", "delete_todo", "Delete a task after explicit confirmation.", true, true, schema("id" to "string")),
+        ToolDefinition("ava.calc.evaluate", "calculate", "Evaluate a mathematical expression.", parameters = schema("expression" to "string")),
+        ToolDefinition("ava.time.now", "current_date_time", "Get current local date, time and time zone.", parameters = schema()),
+        ToolDefinition("ava.date.diff", "date_difference", "Calculate the number of days between two ISO dates.", parameters = schema("start" to "string", "end" to "string")),
+        ToolDefinition("ava.web.read", "read_webpage", "Read and extract readable text from an HTTPS webpage.", parameters = schema("url" to "string")),
+        ToolDefinition("ava.web.search", "search_web", "Search the web using the configured Brave Search API key.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.clipboard.write", "copy_to_clipboard", "Write text to the device clipboard. Clipboard reading is not available.", true, parameters = schema("text" to "string"))
     )
 }
 
@@ -92,8 +105,8 @@ class ToolRegistryStore(context: Context) {
         it.enabled && it.approval != ToolApproval.DISABLED && it.modelName == name
     }
 
-    fun modelTools(): JSONArray = JSONArray().apply {
-        val controls = all().filter { it.enabled && it.approval != ToolApproval.DISABLED }
+    fun modelTools(allowedUids: Set<String>? = null): JSONArray = JSONArray().apply {
+        val controls = all().filter { it.enabled && it.approval != ToolApproval.DISABLED && (allowedUids == null || it.uid in allowedUids) }
         controls.forEach { control ->
             val definition = defaults[control.uid] ?: return@forEach
             put(JSONObject().put("type", "function").put("function", JSONObject()
@@ -125,6 +138,11 @@ class WorkspaceToolRuntime(
         val definition = AvaTools.definitions.first { it.uid == control.uid }
         val path = arguments.optString("path")
         val summary = when (control.uid) {
+            "ava.memory.add" -> "Save note: " + arguments.optString("title")
+            "ava.todo.add" -> "Add task: " + arguments.optString("title")
+            "ava.todo.complete" -> "Complete task " + arguments.optString("id")
+            "ava.todo.delete" -> "Delete task " + arguments.optString("id")
+            "ava.clipboard.write" -> "Copy text to device clipboard"
             "ava.fs.delete" -> "Delete " + path
             "ava.fs.write" -> "Write file " + path + " (" + arguments.optString("mode", "CREATE") + ")"
             "ava.fs.replace" -> "Replace text in " + path
@@ -166,7 +184,7 @@ class WorkspaceToolRuntime(
                 "ava.fs.delete" -> workspace.delete(a.getString("path"), confirmed)
                 "ava.fs.zip" -> workspace.zip(a.getString("source"), a.getString("destination"))
                 "ava.fs.unzip" -> workspace.unzip(a.getString("archive"), a.getString("destination"))
-                else -> error("Tool is not implemented.")
+                else -> DailyToolRuntime.execute(execution.uid, a, confirmed)
             }
             ToolResult(execution.uid, true, result)
         }.getOrElse { ToolResult(execution.uid, false, it.message ?: "Tool failed.") }
