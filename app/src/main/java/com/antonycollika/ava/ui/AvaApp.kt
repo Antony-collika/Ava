@@ -86,7 +86,7 @@ fun AvaApp(
     var pendingAttachments by remember { mutableStateOf<List<MessageAttachment>>(emptyList()) }
     val context = LocalContext.current
     val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
-        val imported = uris.mapNotNull { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) }
+        val imported = uris.take((4 - pendingAttachments.size).coerceAtLeast(0)).mapNotNull { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) }
             .onFailure { errorMessage = it.message ?: "Unable to attach this image." }.getOrNull() }
         pendingAttachments = (pendingAttachments + imported).take(4)
     }
@@ -612,7 +612,7 @@ fun AvaApp(
         }
         if (showHistory) {
             ModalBottomSheet(onDismissRequest = { showHistory = false }) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Your conversations", style = MaterialTheme.typography.titleLarge)
@@ -645,7 +645,7 @@ fun AvaApp(
                             }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(conversation.title, maxLines = 1, style = MaterialTheme.typography.bodyLarge)
-                                    Text(matchingMessage?.content?.let { excerptAround(it, historySearch) } ?: "${conversation.messages.size} messages",
+                                    Text(matchingMessage?.content?.let { highlightSnippet(excerptAround(it, historySearch), historySearch) } ?: AnnotatedString("${conversation.messages.size} messages"),
                                         style = MaterialTheme.typography.labelSmall, maxLines = 2,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -856,6 +856,20 @@ private fun MessageBubble(
             text = { OutlinedTextField(value = editText, onValueChange = onEditTextChange,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 520.dp), minLines = 10) },
             confirmButton = { TextButton(onClick = { expandedEditor = false }) { Text("Done") } })
+    }
+}
+
+private fun highlightSnippet(text: String, query: String): AnnotatedString = buildAnnotatedString {
+    if (query.isBlank()) { append(text); return@buildAnnotatedString }
+    var cursor = 0
+    while (cursor < text.length) {
+        val index = text.indexOf(query, cursor, ignoreCase = true)
+        if (index < 0) { append(text.substring(cursor)); break }
+        append(text.substring(cursor, index))
+        withStyle(SpanStyle(background = Color(0xFFFFD54F), color = Color.Black, fontWeight = FontWeight.Bold)) {
+            append(text.substring(index, index + query.length))
+        }
+        cursor = index + query.length
     }
 }
 
