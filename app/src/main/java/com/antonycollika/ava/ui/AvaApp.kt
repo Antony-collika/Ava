@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTre
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
@@ -46,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import com.antonycollika.ava.SecureKeyStore
 import com.antonycollika.ava.data.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -84,17 +87,25 @@ fun AvaApp(
             .onSuccess { workspaceMessage = "Workspace folder selected." }
             .onFailure { workspaceMessage = it.message ?: "Unable to access workspace." }
     }
+    val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<MessageAttachment>>(emptyList()) }
     val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
-        val imported = uris.take((4 - pendingAttachments.size).coerceAtLeast(0)).mapNotNull { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) }
-            .onFailure { errorMessage = it.message ?: "Unable to attach this image." }.getOrNull() }
-        pendingAttachments = (pendingAttachments + imported).take(4)
+        val selected = uris.take((4 - pendingAttachments.size).coerceAtLeast(0))
+        scope.launch {
+            val results = withContext(Dispatchers.IO) {
+                selected.map { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) } }
+            }
+            pendingAttachments = (pendingAttachments + results.mapNotNull { it.getOrNull() }).take(4)
+            results.firstOrNull { it.isFailure }?.exceptionOrNull()?.message?.let { errorMessage = it }
+        }
     }
     val cameraPicker = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) runCatching { attachmentStore.importBitmap(bitmap) }
-            .onSuccess { pendingAttachments = (pendingAttachments + it).take(4) }
-            .onFailure { errorMessage = it.message ?: "Unable to save camera image." }
+        if (bitmap != null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) { attachmentStore.importBitmap(bitmap) } }
+                .onSuccess { pendingAttachments = (pendingAttachments + it).take(4) }
+                .onFailure { errorMessage = it.message ?: "Unable to save camera image." }
+        }
     }
     var sending by remember { mutableStateOf(false) }
     var generationJob by remember { mutableStateOf<Job?>(null) }
@@ -125,8 +136,6 @@ fun AvaApp(
         val index = messageSnapshot.indexOfFirst { it.id == target }
         if (index >= 0) { listState.animateScrollToItem(index); pendingJumpMessageId = null }
     }
-    val scope = rememberCoroutineScope()
-
     fun persist() {
         if (messages.isEmpty()) {
             conversationStore.delete(activeId)
@@ -370,11 +379,8 @@ fun AvaApp(
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     pendingAttachments.forEach { attachment ->
-                                        val bitmap = remember(attachment.id) {
-                                            attachmentStore.file(attachment)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
-                                        }
                                         Box(Modifier.size(68.dp)) {
-                                            bitmap?.let { Image(it, attachment.fileName, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                                            AttachmentImage(attachment, attachmentStore, Modifier.fillMaxSize(), ContentScale.Crop)
                                             IconButton(onClick = { pendingAttachments = pendingAttachments.filterNot { it.id == attachment.id } },
                                                 modifier = Modifier.align(Alignment.TopEnd).size(24.dp)) { Text("×") }
                                         }
@@ -674,6 +680,30 @@ fun AvaApp(
 }
 
 
+
+@Composable
+private fun AttachmentImage(
+    attachment: MessageAttachment,
+    store: AttachmentStore,
+    modifier: Modifier,
+    contentScale: ContentScale
+) {
+    val image by produceState<ImageBitmap?>(initialValue = null, key1 = attachment.id) {
+        val file = store.file(attachment)
+        value = withContext(Dispatchers.IO) { file?.let(::decodeSampledImage) }
+    }
+    image?.let { Image(it, attachment.fileName, modifier, contentScale = contentScale) }
+}
+
+private fun decodeSampledImage(file: java.io.File): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > 1400 || bounds.outHeight / sample > 1400) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    return BitmapFactory.decodeFile(file.absolutePath, options)?.asImageBitmap()
+}
+
 @Composable
 private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore, provider: ProviderType, onDismiss: () -> Unit) {
     var webSearchKey by remember { mutableStateOf(keyStore.read("WEB_SEARCH").orEmpty()) }
@@ -811,11 +841,8 @@ private fun MessageBubble(
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
                 message.attachments.forEach { attachment ->
-                        val bitmap = remember(attachment.id) {
-                            attachmentStore.file(attachment)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
-                        }
-                        bitmap?.let { Image(it, attachment.fileName,
-                            Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
+                        AttachmentImage(attachment, attachmentStore,
+                            Modifier.fillMaxWidth().heightIn(max = 240.dp), ContentScale.Fit)
                     }
                     SelectionContainer {
                         Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }, highlightQuery) },

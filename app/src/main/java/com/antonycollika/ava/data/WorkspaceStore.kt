@@ -16,7 +16,10 @@ class WorkspaceStore(private val context: Context) {
     fun selectedUri(): Uri? = prefs.getString("tree_uri", null)?.let(Uri::parse)
     fun hasAccess(): Boolean {
         val uri = selectedUri() ?: return false
-        return context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
+        val permission = context.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission && it.isWritePermission
+        }
+        return permission && runCatching { DocumentFile.fromTreeUri(context, uri)?.isDirectory == true }.getOrDefault(false)
     }
     fun selectWorkspace(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri,
@@ -143,6 +146,7 @@ class WorkspaceStore(private val context: Context) {
     }
     fun move(source: String, destination: String): String { copy(source, destination); deleteNode(source); return "Moved " + source + " to " + destination }
     fun rename(path: String, name: String): String {
+        require(path.isNotBlank()) { "Cannot rename the workspace root." }
         require(name.isNotBlank() && '/' !in name && '\\' !in name && name !in setOf(".", ".."))
         val f = resolve(path) ?: error("File not found.")
         require(f.parentFile?.findFile(name) == null); check(f.renameTo(name)); return "Renamed " + path
@@ -183,32 +187,60 @@ class WorkspaceStore(private val context: Context) {
     fun unzip(archivePath: String, destination: String): String {
         val archive = resolve(archivePath) ?: error("Archive not found.")
         require(archive.isFile && archive.length() <= MAX_ARCHIVE_BYTES)
-        val folder = resolve(destination) ?: error("Destination folder not found."); require(folder.isDirectory)
-        context.contentResolver.openInputStream(archive.uri)?.use { raw -> ZipInputStream(raw).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                val segments = parts(entry.name); require(segments.isNotEmpty() && !entry.name.startsWith("/"))
-                var parent = folder
-                segments.dropLast(1).forEach { part ->
-                    parent = parent.findFile(part) ?: requireNotNull(parent.createDirectory(part))
-                    require(parent.isDirectory)
+        val folder = resolve(destination) ?: error("Destination folder not found.")
+        require(folder.isDirectory)
+        var extractedBytes = 0L
+        var entryCount = 0
+        context.contentResolver.openInputStream(archive.uri)?.use { raw ->
+            ZipInputStream(raw).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    entryCount++
+                    require(entryCount <= MAX_ZIP_ENTRIES) { "ZIP archive contains too many entries." }
+                    val segments = parts(entry.name)
+                    require(segments.isNotEmpty() && !entry.name.startsWith("/"))
+                    var parent = folder
+                    segments.dropLast(1).forEach { part ->
+                        parent = parent.findFile(part) ?: requireNotNull(parent.createDirectory(part))
+                        require(parent.isDirectory)
+                    }
+                    val name = segments.last()
+                    if (entry.isDirectory) {
+                        if (parent.findFile(name) == null) requireNotNull(parent.createDirectory(name))
+                    } else {
+                        require(parent.findFile(name) == null) { "Archive entry already exists: " + entry.name }
+                        val output = requireNotNull(parent.createFile(mime(name), name))
+                        try {
+                            context.contentResolver.openOutputStream(output.uri, "wt")?.use { stream ->
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val count = zip.read(buffer)
+                                    if (count < 0) break
+                                    extractedBytes += count
+                                    require(extractedBytes <= MAX_EXTRACTED_BYTES) { "Extracted data exceeds the 200 MB safety limit." }
+                                    stream.write(buffer, 0, count)
+                                }
+                            } ?: error("Extraction failed.")
+                        } catch (failure: Throwable) {
+                            output.delete()
+                            throw failure
+                        }
+                    }
+                    zip.closeEntry()
                 }
-                val name = segments.last()
-                if (entry.isDirectory) { if (parent.findFile(name) == null) requireNotNull(parent.createDirectory(name)) }
-                else {
-                    require(parent.findFile(name) == null) { "Archive entry already exists: " + entry.name }
-                    val out = requireNotNull(parent.createFile(mime(name), name))
-                    context.contentResolver.openOutputStream(out.uri, "wt")?.use { zip.copyTo(it) } ?: error("Extraction failed.")
-                }
-                zip.closeEntry()
             }
-        } } ?: error("Unable to read archive.")
+        } ?: error("Unable to read archive.")
         return "Extracted " + archivePath
     }
+
     private fun mime(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
         "txt", "md", "log", "yaml", "yml" -> "text/plain"
         "json" -> "application/json"; "csv" -> "text/csv"; "xml" -> "application/xml"
         "html", "htm" -> "text/html"; "zip" -> "application/zip"; else -> "application/octet-stream"
     }
-    companion object { const val MAX_TEXT_BYTES = 4L * 1024 * 1024; const val MAX_ARCHIVE_BYTES = 50L * 1024 * 1024; const val MAX_BATCH = 20 }
+    companion object { const val MAX_TEXT_BYTES = 4L * 1024 * 1024
+        const val MAX_ARCHIVE_BYTES = 50L * 1024 * 1024
+        const val MAX_EXTRACTED_BYTES = 200L * 1024 * 1024
+        const val MAX_ZIP_ENTRIES = 2000
+        const val MAX_BATCH = 20 }
 }

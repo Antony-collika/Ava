@@ -97,6 +97,20 @@ class ProviderClient(private val attachmentStore: AttachmentStore? = null) {
         awaitClose { call.cancel(); reader.cancel() }
     }
 
+    private fun geminiSchema(source: JSONObject): JSONObject {
+        val copy = JSONObject(source.toString())
+        fun normalize(node: JSONObject) {
+            node.optString("type").takeIf { it.isNotBlank() }?.let { node.put("type", it.uppercase()) }
+            node.optJSONObject("properties")?.let { properties ->
+                val keys = properties.keys()
+                while (keys.hasNext()) properties.optJSONObject(keys.next())?.let(::normalize)
+            }
+            node.optJSONObject("items")?.let(::normalize)
+        }
+        normalize(copy)
+        return copy
+    }
+
     private fun buildRequest(settings: ProviderSettings, key: String, messages: List<ChatMessage>, tools: JSONArray? = null, registry: ToolRegistryStore? = null): Request {
         require(key.isNotBlank()) { "Enter your API key in Settings." }
         require(settings.model.isNotBlank()) { "Enter a model name in Settings." }
@@ -187,7 +201,7 @@ class ProviderClient(private val attachmentStore: AttachmentStore? = null) {
                         val function = source.getJSONObject(index).getJSONObject("function")
                         declarations.put(JSONObject().put("name", function.getString("name"))
                             .put("description", function.optString("description"))
-                            .put("parameters", function.optJSONObject("parameters") ?: JSONObject().put("type", "object")))
+                            .put("parameters", function.optJSONObject("parameters")?.let(::geminiSchema) ?: JSONObject().put("type", "OBJECT")))
                     }
                     if (declarations.length() > 0) put(JSONObject().put("functionDeclarations", declarations))
                 } }

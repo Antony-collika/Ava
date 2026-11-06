@@ -112,12 +112,21 @@ class ToolRegistryStore(context: Context) {
         }.getOrDefault(ToolControl(definition.uid, true, ToolApproval.ASK, definition.defaultName, definition.defaultDescription))
     }
 
-    fun update(control: ToolControl, provider: ProviderType = ProviderType.OPENAI): String? {
-        val definition = defaults[control.uid] ?: return "Unknown tool UID."
-        if (!validToolName(control.modelName, provider)) return if (provider == ProviderType.GEMINI)
+    fun validateName(uid: String, name: String, provider: ProviderType): String? {
+        if (defaults[uid] == null) return "Unknown tool UID."
+        if (!validToolName(name, provider)) return if (provider == ProviderType.GEMINI)
             "Gemini tool names must start with a letter or underscore and contain only letters, numbers or underscores."
         else "Tool name must use letters, numbers, underscore or hyphen (1–64 characters)."
-        if (all().any { it.uid != control.uid && it.modelName.equals(control.modelName, true) }) return "Another tool already uses this model name."
+        if (all().any { it.uid != uid && it.modelName.equals(name, true) }) return "Another tool already uses this model name."
+        return null
+    }
+
+    fun invalidControls(provider: ProviderType): List<ToolControl> =
+        all().filter { validateName(it.uid, it.modelName, provider) != null }
+
+    fun update(control: ToolControl, provider: ProviderType = ProviderType.OPENAI): String? {
+        val validation = validateName(control.uid, control.modelName, provider)
+        if (validation != null) return validation
         if (control.modelDescription.isBlank()) return "Model description cannot be empty."
         prefs.edit().putString(control.uid, JSONObject().put("enabled", control.enabled)
             .put("approval", control.approval.name).put("modelName", control.modelName)

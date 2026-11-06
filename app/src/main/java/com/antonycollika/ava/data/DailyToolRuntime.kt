@@ -12,6 +12,8 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.net.InetAddress
+import java.net.URI
 import java.time.LocalDate
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -21,8 +23,8 @@ import java.util.concurrent.TimeUnit
 
 class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
     private val prefs = context.getSharedPreferences("ava_daily_tools", Context.MODE_PRIVATE)
-    private val http = OkHttpClient.Builder().connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
+        .connectTimeout(12, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
     private val appContext = context.applicationContext
 
     fun execute(uid: String, args: JSONObject, confirmed: Boolean): String = when (uid) {
@@ -103,25 +105,47 @@ class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
     }
 
     private fun readWeb(rawUrl: String): String {
-        val uri = android.net.Uri.parse(rawUrl)
-        val host = uri.host?.lowercase().orEmpty()
-        require(uri.scheme == "https" && host.isNotBlank() && host != "localhost" && !host.endsWith(".local") &&
-            !host.startsWith("127.") && !host.startsWith("10.") && !host.startsWith("192.168.") &&
-            !Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.").containsMatchIn(host)) { "Only public HTTPS webpages are supported." }
-        val request = Request.Builder().url(rawUrl).header("User-Agent", "AvaAndroid/1.0").build()
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Web request failed: HTTP " + response.code)
-            val body = response.body ?: error("Webpage returned an empty response.")
-            require(body.contentLength() <= MAX_WEB_BYTES || body.contentLength() == -1L) { "Webpage is too large." }
-            val html = body.string().take(MAX_WEB_BYTES.toInt())
-            return html.replace(Regex("(?is)<(script|style|noscript)[^>]*>.*?</\\1>"), " ")
-                .replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>"), "\n")
-                .replace(Regex("<[^>]+>"), " ")
-                .replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
-                .replace("&gt;", ">").replace("&quot;", "\"")
-                .replace(Regex("[ \\t\\x0B\\f]+"), " ").replace(Regex("\\n{3,}"), "\n\n")
-                .trim().take(12_000)
+        var current = URI(rawUrl)
+        repeat(MAX_REDIRECTS + 1) { hop ->
+            validatePublicHttps(current)
+            val request = Request.Builder().url(current.toString()).header("User-Agent", "AvaAndroid/1.0").build()
+            http.newCall(request).execute().use { response ->
+                if (response.code in 300..399) {
+                    val location = response.header("Location") ?: error("Webpage redirect has no destination.")
+                    require(hop < MAX_REDIRECTS) { "Too many webpage redirects." }
+                    current = current.resolve(location)
+                    return@repeat
+                }
+                if (!response.isSuccessful) error("Web request failed: HTTP " + response.code)
+                val body = response.body ?: error("Webpage returned an empty response.")
+                require(body.contentLength() <= MAX_WEB_BYTES || body.contentLength() == -1L) { "Webpage is too large." }
+                val bytes = body.source().readByteArray(MAX_WEB_BYTES + 1L)
+                require(bytes.size <= MAX_WEB_BYTES) { "Webpage is too large." }
+                val html = bytes.toString(Charsets.UTF_8)
+                return html.replace(Regex("(?is)<(script|style|noscript)[^>]*>.*?</\\1>"), " ")
+                    .replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>"), "\n")
+                    .replace(Regex("<[^>]+>"), " ")
+                    .replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
+                    .replace("&gt;", ">").replace("&quot;", "\"")
+                    .replace(Regex("[ \\t\\x0B\\f]+"), " ").replace(Regex("\\n{3,}"), "\n\n")
+                    .trim().take(12_000)
+            }
         }
+        error("Unable to read webpage after redirects.")
+    }
+
+    private fun validatePublicHttps(uri: URI) {
+        val host = uri.host?.lowercase().orEmpty()
+        require(uri.scheme.equals("https", true) && host.isNotBlank() && uri.userInfo == null &&
+            host != "localhost" && !host.endsWith(".localhost") && !host.endsWith(".local") &&
+            !host.endsWith(".internal") && host != "metadata.google.internal") {
+            "Only public HTTPS webpages are supported."
+        }
+        val addresses = InetAddress.getAllByName(host)
+        require(addresses.isNotEmpty() && addresses.all {
+            !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress &&
+                !it.isSiteLocalAddress && !it.isMulticastAddress
+        }) { "Private and local network addresses are blocked." }
     }
 
     private fun searchWeb(query: String): String {

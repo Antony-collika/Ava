@@ -44,6 +44,17 @@ class ConversationOperationsTest {
         assertFalse(legacy.single().edited)
     }
 
+    @Test fun attachmentAndToolCallMetadataRoundTrip() {
+        val original = listOf(
+            ChatMessage("user-1", "user", "look at this",
+                attachments = listOf(MessageAttachment("image-id", "image/jpeg", "photo.jpg"))),
+            ChatMessage("assistant-1", "assistant", "opening file",
+                toolCalls = listOf(ChatToolCall("call-1", "ava.fs.read", "read_file", """{"path":"notes.md"}"""))),
+            ChatMessage("tool-1", "tool", "contents", toolCallId = "call-1", toolUid = "ava.fs.read")
+        )
+        assertEquals(original, ChatJson.decode(ChatJson.encode(original)))
+    }
+
     @Test fun regenerationWorksWhenAssistantReplyIsMissing() {
         val messages = listOf(message("user", "failed request"))
         val plan = ConversationOperations.regenerationPlan(messages, 0)!!
