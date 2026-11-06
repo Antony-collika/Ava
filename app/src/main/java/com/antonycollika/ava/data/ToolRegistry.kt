@@ -222,7 +222,7 @@ class WorkspaceToolRuntime(
                 "ava.fs.unzip" -> workspace.unzip(a.getString("archive"), a.getString("destination"))
                 "ava.fs.replace_many" -> {
                     val paths = a.getJSONArray("paths").let { array -> (0 until array.length()).map { array.getString(it) } }
-                    "Replaced " + paths.sumOf { path -> runCatching { StructuredTextTools.replaceCount(workspace, path, a.getString("old_text"), a.getString("new_text")) }.getOrDefault(0) } + " occurrence(s)."
+                    "Replaced " + paths.sumOf { path: String -> runCatching { StructuredTextTools.replaceCount(workspace, path, a.getString("old_text"), a.getString("new_text")) }.getOrDefault(0) } + " occurrence(s)."
                 }
                 "ava.fs.count" -> StructuredTextTools.count(workspace.readText(a.getString("path")))
                 "ava.fs.compare" -> StructuredTextTools.compare(workspace, a.getString("first"), a.getString("second"))
