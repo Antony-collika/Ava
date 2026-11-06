@@ -73,7 +73,11 @@ fun AvaApp(
     val scope = rememberCoroutineScope()
 
     fun persist() {
-        if (messages.isEmpty()) return
+        if (messages.isEmpty()) {
+            conversationStore.delete(activeId)
+            conversations.removeAll { it.id == activeId }
+            return
+        }
         val firstUser = messages.firstOrNull { it.role == "user" }?.content.orEmpty()
         val title = conversations.firstOrNull { it.id == activeId }?.title
             ?.takeIf { it != "New chat" }
