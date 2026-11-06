@@ -29,9 +29,18 @@ class ConversationOperationsTest {
         assertEquals(listOf(source.last()), ConversationOperations.deleteTurn(source, 1))
     }
 
-    @Test fun legacyMessagesDecodeAsNotEdited() {
-        val decoded = ChatJson.decode("""[{"id":"1","role":"user","content":"hello"}]""")
-        assertFalse(decoded.single().edited)
+    @Test fun messageEditMetadataRoundTripsAndLegacyDefaultsRemainFalse() {
+        val edited = message("user", "corrected").copy(edited = true)
+        assertTrue(ChatJson.decode(ChatJson.encode(listOf(edited))).single().edited)
+        val legacy = ChatJson.decode("""[{"id":"1","role":"user","content":"hello"}]""")
+        assertFalse(legacy.single().edited)
+    }
+
+    @Test fun regenerationWorksWhenAssistantReplyIsMissing() {
+        val messages = listOf(message("user", "failed request"))
+        val plan = ConversationOperations.regenerationPlan(messages, 0)!!
+        assertEquals(0, plan.userMessageIndex)
+        assertFalse(plan.hasFollowingMessages)
     }
 
     @Test fun contextProjectionKeepsNewestUserTurn() {
