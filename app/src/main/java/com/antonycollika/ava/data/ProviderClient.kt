@@ -318,7 +318,7 @@ class ProviderClient(private val attachmentStore: AttachmentStore? = null) {
                 val part = parts.optJSONObject(partIndex) ?: continue
                 part.optString("text").takeIf { it.isNotBlank() && it != "null" }?.let { emit(ProviderEvent.Text(it)) }
                 val call = part.optJSONObject("functionCall") ?: continue
-                emit(ProviderEvent.ToolCallDelta(index++, call.optString("id").ifBlank { null },
+                emit(ProviderEvent.ToolCallDelta(index++, call.optString("id").takeIf { it.isNotBlank() },
                     call.optString("name"), call.optJSONObject("args")?.toString().orEmpty()))
             }
         }

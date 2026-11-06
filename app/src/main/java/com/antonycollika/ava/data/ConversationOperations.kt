@@ -58,7 +58,8 @@ object ConversationOperations {
         }
     }
 
-    fun messageTokens(message: ChatMessage): Int = estimatedTokens(message.content) + message.attachments.size * 1024
+    fun messageTokens(message: ChatMessage): Int = estimatedTokens(message.content) +
+        message.attachments.size * 1024 + message.toolCalls.sumOf { estimatedTokens(it.arguments) }
 
     fun estimateConversationTokens(
         messages: List<ChatMessage>,
@@ -86,7 +87,7 @@ object ConversationOperations {
             used += previousCost
             start--
         }
-        while (start < messages.lastIndex && messages[start].role != "user") start++
+        while (start > 0 && messages[start].role != "user") start--
         return messages.drop(start)
     }
 }

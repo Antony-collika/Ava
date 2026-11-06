@@ -31,7 +31,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
         val transcript = initialMessages.toMutableList()
         val finalText = StringBuilder()
         repeat(MAX_TOOL_ROUNDS) { round ->
-            val tools = registry.modelTools(allowedToolUids)
+            val tools = registry.modelTools(allowedToolUids, settings.provider)
             val calls = linkedMapOf<Int, ToolCall>()
             val responseText = StringBuilder()
             providerClient.streamEvents(settings, apiKey, transcript, tools, registry).collect { event ->

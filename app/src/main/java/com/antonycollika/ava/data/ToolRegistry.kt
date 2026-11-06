@@ -24,25 +24,27 @@ data class ToolControl(
 )
 
 object AvaTools {
-    private fun schema(vararg fields: Pair<String, String>): JSONObject {
+    private fun schema(vararg fields: Pair<String, String>): JSONObject = schemaWithOptional(fields.map { it.first }.toSet(), *fields)
+
+    private fun schemaWithOptional(required: Set<String>, vararg fields: Pair<String, String>): JSONObject {
         val properties = JSONObject()
         fields.forEach { (name, type) -> properties.put(name, JSONObject().put("type", type).apply {
             if (type == "array") put("items", JSONObject().put("type", "string"))
         }) }
         return JSONObject().put("type", "object").put("properties", properties)
-            .put("required", JSONArray(fields.map { it.first }))
+            .put("required", JSONArray(required.toList()))
     }
 
     val definitions = listOf(
         ToolDefinition("ava.fs.list", "list_files", "List files and folders in a workspace directory.", parameters = schema("path" to "string")),
         ToolDefinition("ava.fs.tree", "directory_tree", "Show a recursive directory tree.", parameters = schema("path" to "string")),
         ToolDefinition("ava.fs.info", "file_info", "Get file or folder metadata.", parameters = schema("path" to "string")),
-        ToolDefinition("ava.fs.read", "read_file", "Read a text file or a numbered line range.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.read", "read_file", "Read a text file or a numbered line range.", parameters = schemaWithOptional(setOf("path"), "path" to "string", "start_line" to "integer", "end_line" to "integer")),
         ToolDefinition("ava.fs.read_many", "read_many_files", "Read multiple text files in one operation.", parameters = schema("paths" to "array")),
         ToolDefinition("ava.fs.search_name", "search_files", "Find workspace files by name.", parameters = schema("query" to "string")),
         ToolDefinition("ava.fs.search_text", "search_file_contents", "Search text across workspace files.", parameters = schema("query" to "string")),
         ToolDefinition("ava.fs.mkdir", "create_directory", "Create a directory.", true, parameters = schema("path" to "string")),
-        ToolDefinition("ava.fs.write", "write_file", "Create, overwrite, append, or edit lines in a text file.", true, parameters = schema("path" to "string", "content" to "string", "mode" to "string")),
+        ToolDefinition("ava.fs.write", "write_file", "Create, overwrite, append, or edit lines in a text file.", true, parameters = schemaWithOptional(setOf("path", "content"), "path" to "string", "content" to "string", "mode" to "string", "line" to "integer", "end_line" to "integer")),
         ToolDefinition("ava.fs.replace", "replace_text", "Replace an exact text fragment in a file.", true, parameters = schema("path" to "string", "old_text" to "string", "new_text" to "string")),
         ToolDefinition("ava.fs.copy", "copy_path", "Copy a file or directory within the workspace.", true, parameters = schema("source" to "string", "destination" to "string")),
         ToolDefinition("ava.fs.move", "move_path", "Move a file or directory within the workspace.", true, parameters = schema("source" to "string", "destination" to "string")),
@@ -84,6 +86,11 @@ object AvaTools {
     )
 }
 
+private fun validToolName(name: String, provider: ProviderType): Boolean = when (provider) {
+    ProviderType.GEMINI -> Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$").matches(name)
+    else -> Regex("^[A-Za-z0-9_-]{1,64}$").matches(name)
+}
+
 class ToolRegistryStore(context: Context) {
     private val prefs = context.getSharedPreferences("ava_tool_registry", Context.MODE_PRIVATE)
     private val defaults = AvaTools.definitions.associateBy { it.uid }
@@ -107,11 +114,7 @@ class ToolRegistryStore(context: Context) {
 
     fun update(control: ToolControl, provider: ProviderType = ProviderType.OPENAI): String? {
         val definition = defaults[control.uid] ?: return "Unknown tool UID."
-        val validName = when (provider) {
-            ProviderType.GEMINI -> Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$").matches(control.modelName)
-            else -> Regex("^[A-Za-z0-9_-]{1,64}$").matches(control.modelName)
-        }
-        if (!validName) return if (provider == ProviderType.GEMINI)
+        if (!validToolName(control.modelName, provider)) return if (provider == ProviderType.GEMINI)
             "Gemini tool names must start with a letter or underscore and contain only letters, numbers or underscores."
         else "Tool name must use letters, numbers, underscore or hyphen (1–64 characters)."
         if (all().any { it.uid != control.uid && it.modelName.equals(control.modelName, true) }) return "Another tool already uses this model name."
@@ -131,8 +134,9 @@ class ToolRegistryStore(context: Context) {
         it.enabled && it.approval != ToolApproval.DISABLED && it.modelName == name
     }
 
-    fun modelTools(allowedUids: Set<String>? = null): JSONArray = JSONArray().apply {
-        val controls = all().filter { it.enabled && it.approval != ToolApproval.DISABLED && (allowedUids == null || it.uid in allowedUids) }
+    fun modelTools(allowedUids: Set<String>? = null, provider: ProviderType = ProviderType.OPENAI): JSONArray = JSONArray().apply {
+        val controls = all().filter { it.enabled && it.approval != ToolApproval.DISABLED &&
+            (allowedUids == null || it.uid in allowedUids) && validToolName(it.modelName, provider) }
         controls.forEach { control ->
             val definition = defaults[control.uid] ?: return@forEach
             put(JSONObject().put("type", "function").put("function", JSONObject()

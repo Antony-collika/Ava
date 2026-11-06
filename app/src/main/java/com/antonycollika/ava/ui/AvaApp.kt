@@ -351,13 +351,13 @@ fun AvaApp(
                             IconButton(onClick = { darkTheme = !darkTheme; settingsStore.saveDarkTheme(darkTheme) }) {
                                 Text(if (darkTheme) "☼" else "☾")
                             }
-                            IconButton(onClick = { workspacePicker.launch(null) }) { Text("▣") }
-                            IconButton(onClick = { showTools = true }) { Text("⚙") }
+                            IconButton(onClick = { workspacePicker.launch(null) }, enabled = !sending) { Text("▣") }
+                            IconButton(onClick = { showTools = true }, enabled = !sending) { Text("⚙") }
                             IconButton(onClick = { inChatSearchVisible = !inChatSearchVisible; inChatSearch = "" }) { Text("⌕") }
                             IconButton(onClick = ::startNewChat) {
                                 Icon(Icons.Default.Add, contentDescription = "New chat")
                             }
-                            IconButton(onClick = { showSettings = true }) {
+                            IconButton(onClick = { showSettings = true }, enabled = !sending) {
                                 Icon(Icons.Default.Settings, contentDescription = "Settings")
                             }
                         }
@@ -717,7 +717,7 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore
                     TextButton(onClick = {
                         val modes = ToolApproval.entries
                         val next = modes[(modes.indexOf(control.approval) + 1) % modes.size]
-                        store.update(control.copy(approval = next)); controls = store.all()
+                        store.update(control.copy(approval = next), provider); controls = store.all()
                     }) { Text("Change") }
                     TextButton(onClick = {
                         editingUid = control.uid; editingName = control.modelName
@@ -776,7 +776,7 @@ private fun MessageBubble(
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
         if (message.edited) Text("edited", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (message.role == "tool") {
+        if (message.role == "tool" || message.toolCalls.isNotEmpty()) {
             Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Tool result · " + (message.toolUid ?: "unknown"), style = MaterialTheme.typography.labelMedium,
