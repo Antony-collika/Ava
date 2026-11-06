@@ -57,6 +57,7 @@ fun AvaApp(
     keyStore: SecureKeyStore,
     attachmentStore: AttachmentStore,
     workspaceStore: WorkspaceStore,
+    toolRegistryStore: ToolRegistryStore,
     providerClient: ProviderClient
 ) {
     var settings by remember { mutableStateOf(settingsStore.load()) }
@@ -515,6 +516,7 @@ fun AvaApp(
             }
         }
 
+        if (showTools) ToolSettingsSheet(toolRegistryStore, onDismiss = { showTools = false })
         if (pendingRegenerationIndex != null) {
             AlertDialog(
                 onDismissRequest = { pendingRegenerationIndex = null },
@@ -619,6 +621,75 @@ fun AvaApp(
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun ToolSettingsSheet(store: ToolRegistryStore, onDismiss: () -> Unit) {
+    var controls by remember { mutableStateOf(store.all()) }
+    var editingUid by remember { mutableStateOf<String?>(null) }
+    var editingName by remember { mutableStateOf("") }
+    var editingDescription by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text("Tool controls", style = MaterialTheme.typography.titleLarge)
+            Text("UIDs and original descriptions are fixed. The model sees only enabled tools and their customized names/descriptions.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            controls.forEach { control ->
+                val definition = AvaTools.definitions.first { it.uid == control.uid }
+                Divider(Modifier.padding(vertical = 8.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(control.modelName, style = MaterialTheme.typography.titleMedium)
+                        Text("UID: " + definition.uid, style = MaterialTheme.typography.labelSmall)
+                        Text(definition.defaultDescription, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = control.enabled, onCheckedChange = { enabled ->
+                        val updated = control.copy(enabled = enabled)
+                        store.update(updated); controls = store.all()
+                    })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Mode: " + control.approval.name, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        val modes = ToolApproval.entries
+                        val next = modes[(modes.indexOf(control.approval) + 1) % modes.size]
+                        store.update(control.copy(approval = next)); controls = store.all()
+                    }) { Text("Change") }
+                    TextButton(onClick = {
+                        editingUid = control.uid; editingName = control.modelName
+                        editingDescription = control.modelDescription; validationError = null
+                    }) { Text("Edit") }
+                    TextButton(onClick = { store.restore(control.uid); controls = store.all() }) { Text("Reset") }
+                }
+                Text("Model description: " + control.modelDescription, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    if (editingUid != null) {
+        AlertDialog(onDismissRequest = { editingUid = null },
+            title = { Text("Customize tool for the model") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = editingName, onValueChange = { editingName = it },
+                        label = { Text("Model tool name") }, singleLine = true)
+                    OutlinedTextField(value = editingDescription, onValueChange = { editingDescription = it },
+                        label = { Text("Model description") }, minLines = 3)
+                    validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uid = editingUid ?: return@TextButton
+                    val current = controls.first { it.uid == uid }
+                    val updated = current.copy(modelName = editingName.trim(), modelDescription = editingDescription.trim())
+                    validationError = store.update(updated)
+                    if (validationError == null) { controls = store.all(); editingUid = null }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingUid = null }) { Text("Cancel") } })
     }
 }
 
