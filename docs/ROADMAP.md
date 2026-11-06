@@ -1,31 +1,35 @@
-# Ava delivery roadmap
+# Ava roadmap
 
-## Phase 1 — BYOK chat foundation
-- [x] Native Kotlin / Jetpack Compose application shell
-- [x] Model ID and OpenAI-compatible endpoint configuration
-- [x] Streaming chat via server-sent events
-- [x] Local conversation persistence
-- [x] API key encryption with Android Keystore AES-GCM
-- [ ] Provider-native adapters for OpenAI, Anthropic and Gemini
-- [ ] Connection test, cancellation, retry and error recovery
-- [ ] Automated unit and UI tests
+## Milestone 1 — Usable BYOK chat
+- [x] Native Kotlin / Jetpack Compose application
+- [x] Provider setup for OpenAI, Anthropic, Gemini and OpenAI-compatible endpoints
+- [x] Per-provider API key encryption with Android Keystore AES-GCM
+- [x] Model ID, base URL and system prompt configuration
+- [x] Provider connection test
+- [x] Streaming responses and stop generation
+- [x] Local conversation history, new chat, reopen and delete
+- [x] Basic Markdown text styling
+- [x] Gradle wrapper, CI build and unit-test workflow
+- [ ] Successful CI build and installable APK artifact verification
+- [ ] Device-level smoke test on a physical Android device
 
-## Phase 2 — Production chat experience
-- [ ] Multiple conversations with create, rename, delete and search
-- [ ] Markdown, code highlighting, copy and regenerate
-- [ ] Attachments, export/import and robust long-context handling
-- [ ] Responsive layouts, accessibility and performance checks
+## Milestone 2 — Production chat experience
+- [ ] Rich Markdown (lists, tables, fenced code, syntax highlighting)
+- [ ] Copy message, regenerate response, edit and resend
+- [ ] Model discovery where provider APIs support it
+- [ ] Attachments, image input and document handling
+- [ ] Export/import and backup/restore
+- [ ] Better accessibility, tablet layouts and automated UI tests
 
-## Phase 3 — Agent foundation
+## Milestone 3 — Agent foundation
 - [ ] Provider-neutral normalized stream and tool-call models
-- [ ] Tool registry with typed input/output contracts
-- [ ] User-visible per-tool permissions and confirmation
+- [ ] Typed local tool registry
+- [ ] Per-tool permissions and user confirmation UI
 - [ ] Bounded tool loop, cancellation and run recovery
 
-## Phase 4 — Advanced capabilities
+## Milestone 4 — Advanced capabilities
 - [ ] Local memory and retrieval
 - [ ] Optional on-device model support
-- [ ] Background tasks only where Android lifecycle and permissions allow
-- [ ] Backup, migration and diagnostics
+- [ ] Background tasks within Android lifecycle and permission constraints
 
-The checkboxes describe implementation status; a checked item is not a claim of release readiness until CI and device-level verification are green.
+Checked items describe implemented code, not a release guarantee. CI and device verification are tracked separately.
