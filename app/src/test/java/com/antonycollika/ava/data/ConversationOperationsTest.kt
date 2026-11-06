@@ -24,9 +24,17 @@ class ConversationOperationsTest {
         assertFalse(ConversationOperations.regenerationPlan(source.take(2), 1)!!.hasFollowingMessages)
     }
 
-    @Test fun deleteRemovesUserAndAssistantPair() {
-        val source = listOf(message("user", "u1"), message("assistant", "a1"), message("user", "u2"))
-        assertEquals(listOf(source.last()), ConversationOperations.deleteTurn(source, 1))
+    @Test fun deleteRemovesWholeTurnIncludingToolCallsAndResults() {
+        val source = listOf(message("user", "u1"), message("assistant", "tool call"),
+            ChatMessage("tool", "tool", "result"), message("assistant", "final"),
+            message("user", "u2"))
+        assertEquals(listOf(source.last()), ConversationOperations.deleteTurn(source, 2))
+    }
+
+    @Test fun regenerationDoesNotBranchForToolMessagesInSameTurn() {
+        val source = listOf(message("user", "u1"), message("assistant", "tool call"),
+            ChatMessage("tool", "tool", "result"), message("assistant", "final"))
+        assertFalse(ConversationOperations.regenerationPlan(source, 3)!!.hasFollowingMessages)
     }
 
     @Test fun messageEditMetadataRoundTripsAndLegacyDefaultsRemainFalse() {
