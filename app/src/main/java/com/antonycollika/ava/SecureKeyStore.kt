@@ -31,8 +31,10 @@ class SecureKeyStore(context: Context) {
 
     fun read(scope: String = "default"): String? = runCatching {
         val storedScope = if (scope == "OPENAI" && !prefs.contains(ciphertextName(scope))) "default" else scope
-        val iv = Base64.decode(prefs.getString(ivName(storedScope), prefs.getString("iv", null)), Base64.NO_WRAP)
-        val encrypted = Base64.decode(prefs.getString(ciphertextName(storedScope), prefs.getString("ciphertext", null)), Base64.NO_WRAP)
+        val legacyIv = if (scope == "OPENAI") prefs.getString("iv", null) else null
+        val legacyCiphertext = if (scope == "OPENAI") prefs.getString("ciphertext", null) else null
+        val iv = Base64.decode(prefs.getString(ivName(storedScope), legacyIv), Base64.NO_WRAP)
+        val encrypted = Base64.decode(prefs.getString(ciphertextName(storedScope), legacyCiphertext), Base64.NO_WRAP)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         String(cipher.doFinal(encrypted), Charsets.UTF_8)
