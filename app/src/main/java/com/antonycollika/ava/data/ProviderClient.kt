@@ -63,7 +63,8 @@ class ProviderClient {
         require(settings.model.isNotBlank()) { "Enter a model name in Settings." }
         val base = settings.baseUrl.trimEnd('/')
         require(base.startsWith("https://")) { "For security, Ava requires an HTTPS provider URL." }
-        val transcript = messages.map { it.role to it.content }
+        val contextMessages = ConversationOperations.fitContext(messages, settings.model, settings.systemPrompt)
+        val transcript = contextMessages.map { it.role to it.content }
         val body: String
         val builder = Request.Builder().header("Accept", "text/event-stream")
 
