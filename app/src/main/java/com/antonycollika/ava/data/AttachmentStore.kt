@@ -70,7 +70,7 @@ class AttachmentStore(context: Context) {
     fun file(attachment: MessageAttachment): File? = File(directory, attachment.id).takeIf { it.isFile }
 
     companion object {
-        const val MAX_IMAGE_BYTES = 15L * 1024 * 1024
+        const val MAX_IMAGE_BYTES = 5L * 1024 * 1024
         val SUPPORTED_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
     }
 }
