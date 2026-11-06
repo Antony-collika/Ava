@@ -73,7 +73,10 @@ fun AvaApp(
     var workspaceMessage by remember { mutableStateOf<String?>(null) }
     var pendingToolExecution by remember { mutableStateOf<ToolExecution?>(null) }
     var pendingToolDecision by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
-    val toolRuntime = remember(workspaceStore, toolRegistryStore) { WorkspaceToolRuntime(workspaceStore, toolRegistryStore) }
+    val dailyToolRuntime = remember(context, keyStore) { DailyToolRuntime(context, keyStore) }
+    val toolRuntime = remember(workspaceStore, toolRegistryStore, dailyToolRuntime) {
+        WorkspaceToolRuntime(workspaceStore, toolRegistryStore, dailyToolRuntime)
+    }
     val workspacePicker = rememberLauncherForActivityResult(OpenDocumentTree()) { uri ->
         if (uri != null) runCatching { workspaceStore.selectWorkspace(uri) }
             .onSuccess { workspaceMessage = "Workspace folder selected." }
@@ -187,7 +190,7 @@ fun AvaApp(
                     initialMessages = requestHistory,
                     registry = toolRegistryStore,
                     runtime = toolRuntime,
-                    toolsAvailable = workspaceStore.hasAccess(),
+                    allowedToolUids = AvaTools.definitions.filter { !it.uid.startsWith("ava.fs.") || workspaceStore.hasAccess() }.map { it.uid }.toSet(),
                     confirm = { execution ->
                         val decision = CompletableDeferred<Boolean>()
                         pendingToolExecution = execution
