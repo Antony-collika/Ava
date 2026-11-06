@@ -95,6 +95,17 @@ fun AvaApp(
                     settings = updated
                     showSettings = false
                     errorMessage = null
+                },
+                onTestConnection = { candidate, enteredKey ->
+                    val secret = enteredKey.takeIf(String::isNotBlank)
+                        ?: keyStore.read(candidate.provider.name).orEmpty()
+                    if (secret.isBlank()) throw ProviderException("Enter an API key before testing.")
+                    val received = StringBuilder()
+                    providerClient.stream(
+                        candidate, secret,
+                        listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK."))
+                    ).collect { received.append(it) }
+                    if (received.isBlank()) throw ProviderException("The provider connected but returned no text.")
                 }
             )
         } else {
@@ -318,7 +329,8 @@ private fun ProviderSettingsScreen(
     hasSavedKey: (ProviderType) -> Boolean,
     onBack: () -> Unit,
     onRemoveKey: (ProviderType) -> Unit,
-    onSave: (ProviderSettings, String) -> Unit
+    onSave: (ProviderSettings, String) -> Unit,
+    onTestConnection: suspend (ProviderSettings, String) -> Unit
 ) {
     var provider by remember(initial) { mutableStateOf(initial.provider) }
     var model by remember(initial) { mutableStateOf(initial.model) }
@@ -328,6 +340,9 @@ private fun ProviderSettingsScreen(
     var expanded by remember { mutableStateOf(false) }
     var showKey by remember { mutableStateOf(false) }
     var keyRemoved by remember(provider) { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var testMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val currentHasKey = hasSavedKey(provider) && !keyRemoved
     Scaffold(
         topBar = {
@@ -383,6 +398,26 @@ private fun ProviderSettingsScreen(
             )
             if (currentHasKey) {
                 TextButton(onClick = { onRemoveKey(provider); keyRemoved = true }) { Text("Remove saved API key") }
+            }
+            OutlinedButton(
+                onClick = {
+                    testing = true
+                    testMessage = null
+                    scope.launch {
+                        val result = runCatching {
+                            onTestConnection(ProviderSettings(provider, model.trim(), baseUrl.trim(), systemPrompt), apiKey)
+                        }
+                        testMessage = result.fold({ "Connection successful." }, { it.message ?: "Connection failed." })
+                        testing = false
+                    }
+                },
+                enabled = !testing && model.isNotBlank() && baseUrl.trim().startsWith("https://") &&
+                    android.net.Uri.parse(baseUrl.trim()).host != null && (apiKey.isNotBlank() || currentHasKey),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (testing) "Testing connection…" else "Test connection") }
+            testMessage?.let {
+                Text(it, color = if (it == "Connection successful.") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.weight(1f))
             Button(
