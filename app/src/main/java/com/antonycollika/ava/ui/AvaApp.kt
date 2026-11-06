@@ -68,7 +68,7 @@ fun AvaApp(
     var renameConversationId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var historySearch by remember { mutableStateOf("") }
-    var darkTheme by remember { mutableStateOf(true) }
+    var darkTheme by remember { mutableStateOf(settingsStore.loadDarkTheme()) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -112,6 +112,9 @@ fun AvaApp(
             sending = false
             return
         }
+        editingMessageId = null
+        editThenRegenerate = false
+        pendingRegenerationIndex = null
         val runId = UUID.randomUUID().toString()
         activeRunId = runId
         sending = true
@@ -238,6 +241,11 @@ fun AvaApp(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1
                                 )
+                                Text(
+                                    "~${ConversationOperations.estimateConversationTokens(messages, settings.systemPrompt)} tokens",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         },
                         navigationIcon = {
@@ -246,7 +254,7 @@ fun AvaApp(
                             }
                         },
                         actions = {
-                            IconButton(onClick = { darkTheme = !darkTheme }) {
+                            IconButton(onClick = { darkTheme = !darkTheme; settingsStore.saveDarkTheme(darkTheme) }) {
                                 Text(if (darkTheme) "☼" else "☾")
                             }
                             IconButton(onClick = ::startNewChat) {
@@ -280,6 +288,11 @@ fun AvaApp(
                                     } else {
                                         val prompt = draft.trim()
                                         if (prompt.isNotEmpty()) {
+                                            if (keyStore.read(settings.provider.name).isNullOrBlank()) {
+                                                errorMessage = "Add your API key in Settings to start chatting."
+                                                showSettings = true
+                                                return@FilledIconButton
+                                            }
                                             draft = ""
                                             errorMessage = null
                                             messages.add(ChatMessage(UUID.randomUUID().toString(), "user", prompt))
