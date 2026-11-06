@@ -131,7 +131,8 @@ data class ToolResult(val uid: String, val success: Boolean, val output: String)
 
 class WorkspaceToolRuntime(
     private val workspace: WorkspaceStore,
-    private val registry: ToolRegistryStore
+    private val registry: ToolRegistryStore,
+    private val dailyTools: DailyToolRuntime? = null
 ) {
     fun prepare(modelToolName: String, arguments: JSONObject): ToolExecution {
         val control = registry.findByModelName(modelToolName) ?: error("Tool is disabled or unknown.")
@@ -184,7 +185,7 @@ class WorkspaceToolRuntime(
                 "ava.fs.delete" -> workspace.delete(a.getString("path"), confirmed)
                 "ava.fs.zip" -> workspace.zip(a.getString("source"), a.getString("destination"))
                 "ava.fs.unzip" -> workspace.unzip(a.getString("archive"), a.getString("destination"))
-                else -> DailyToolRuntime.execute(execution.uid, a, confirmed)
+                else -> requireNotNull(dailyTools) { "Daily tools are unavailable." }.execute(execution.uid, a, confirmed)
             }
             ToolResult(execution.uid, true, result)
         }.getOrElse { ToolResult(execution.uid, false, it.message ?: "Tool failed.") }
