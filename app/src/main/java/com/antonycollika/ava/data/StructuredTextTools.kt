@@ -33,6 +33,9 @@ object StructuredTextTools {
                 "\"" + value.replace("\"", "\"\"") + "\"" else value
         }
     }
+    fun replaceCount(store: WorkspaceStore, path: String, oldText: String, newText: String): Int =
+        store.replace(path, oldText, newText)
+
     fun csvRead(store: WorkspaceStore, path: String): String {
         val rows = csv(store.readText(path))
         if (rows.isEmpty()) return "(empty CSV)"
@@ -99,9 +102,9 @@ object StructuredTextTools {
         return when (value) { is JSONObject -> value.toString(2); is JSONArray -> value.toString(2); else -> value.toString() }
     }
     fun jsonSet(store: WorkspaceStore, path: String, pointer: String, rawValue: String): String {
-        val root = JSONObjectOrArray(store.readText(path)); val keys = pointer.split('.').filter { it.isNotBlank() }
-        require(keys.isNotEmpty() && root is JSONObject) { "JSON update path must start at an object property." }
-        var current = root
+        val root = JSONObject(store.readText(path)); val keys = pointer.split('.').filter { it.isNotBlank() }
+        require(keys.isNotEmpty()) { "JSON update path must start at an object property." }
+        var current: JSONObject = root
         keys.dropLast(1).forEach { key ->
             val next = current.optJSONObject(key) ?: JSONObject().also { current.put(key, it) }
             current = next
