@@ -37,6 +37,12 @@ class ProviderSettingsStore(context: Context) {
             .putString("system_prompt_$suffix", settings.systemPrompt)
             .apply()
     }
+
+    fun loadDarkTheme(): Boolean = prefs.getBoolean("dark_theme", true)
+
+    fun saveDarkTheme(enabled: Boolean) {
+        prefs.edit().putBoolean("dark_theme", enabled).apply()
+    }
 }
 
 class ConversationStore(context: Context) {

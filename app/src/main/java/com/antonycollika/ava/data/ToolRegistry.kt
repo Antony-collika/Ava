@@ -1,0 +1,256 @@
+package com.antonycollika.ava.data
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+
+enum class ToolApproval { AUTO, ASK, DISABLED }
+
+data class ToolDefinition(
+    val uid: String,
+    val defaultName: String,
+    val defaultDescription: String,
+    val writeOperation: Boolean = false,
+    val deleteOperation: Boolean = false,
+    val parameters: JSONObject
+)
+
+data class ToolControl(
+    val uid: String,
+    val enabled: Boolean,
+    val approval: ToolApproval,
+    val modelName: String,
+    val modelDescription: String
+)
+
+object AvaTools {
+    private fun schema(vararg fields: Pair<String, String>): JSONObject = schemaWithOptional(fields.map { it.first }.toSet(), *fields)
+
+    private fun schemaWithOptional(required: Set<String>, vararg fields: Pair<String, String>): JSONObject {
+        val properties = JSONObject()
+        fields.forEach { (name, type) -> properties.put(name, JSONObject().put("type", type).apply {
+            if (type == "array") put("items", JSONObject().put("type", "string"))
+        }) }
+        return JSONObject().put("type", "object").put("properties", properties)
+            .put("required", JSONArray(required.toList()))
+    }
+
+    val definitions = listOf(
+        ToolDefinition("ava.fs.list", "list_files", "List files and folders in a workspace directory.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.tree", "directory_tree", "Show a recursive directory tree.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.info", "file_info", "Get file or folder metadata.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.read", "read_file", "Read a text file or a numbered line range.", parameters = schemaWithOptional(setOf("path"), "path" to "string", "start_line" to "integer", "end_line" to "integer")),
+        ToolDefinition("ava.fs.read_many", "read_many_files", "Read multiple text files in one operation.", parameters = schema("paths" to "array")),
+        ToolDefinition("ava.fs.search_name", "search_files", "Find workspace files by name.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.fs.search_text", "search_file_contents", "Search text across workspace files.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.fs.mkdir", "create_directory", "Create a directory.", true, parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.write", "write_file", "Create, overwrite, append, or edit lines in a text file.", true, parameters = schemaWithOptional(setOf("path", "content"), "path" to "string", "content" to "string", "mode" to "string", "line" to "integer", "end_line" to "integer")),
+        ToolDefinition("ava.fs.replace", "replace_text", "Replace an exact text fragment in a file.", true, parameters = schema("path" to "string", "old_text" to "string", "new_text" to "string")),
+        ToolDefinition("ava.fs.copy", "copy_path", "Copy a file or directory within the workspace.", true, parameters = schema("source" to "string", "destination" to "string")),
+        ToolDefinition("ava.fs.move", "move_path", "Move a file or directory within the workspace.", true, parameters = schema("source" to "string", "destination" to "string")),
+        ToolDefinition("ava.fs.rename", "rename_path", "Rename a file or directory.", true, parameters = schema("path" to "string", "new_name" to "string")),
+        ToolDefinition("ava.fs.delete", "delete_path", "Delete a file or directory after explicit confirmation.", true, true, schema("path" to "string")),
+        ToolDefinition("ava.fs.zip", "zip_path", "Create a ZIP archive from a workspace path.", true, parameters = schema("source" to "string", "destination" to "string")),
+        ToolDefinition("ava.fs.unzip", "unzip_archive", "Extract a ZIP archive into a workspace folder.", true, parameters = schema("archive" to "string", "destination" to "string")),
+        ToolDefinition("ava.memory.add", "save_note", "Save a durable local note for future conversations.", true, parameters = schema("title" to "string", "content" to "string")),
+        ToolDefinition("ava.memory.list", "list_notes", "List saved local notes.", parameters = schema()),
+        ToolDefinition("ava.memory.search", "search_notes", "Search saved local notes.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.todo.add", "add_todo", "Add an item to the local task list.", true, parameters = schema("title" to "string")),
+        ToolDefinition("ava.todo.list", "list_todos", "List local tasks and their status.", parameters = schema()),
+        ToolDefinition("ava.todo.complete", "complete_todo", "Mark a task as completed.", true, parameters = schema("id" to "string")),
+        ToolDefinition("ava.todo.delete", "delete_todo", "Delete a task after explicit confirmation.", true, true, schema("id" to "string")),
+        ToolDefinition("ava.calc.evaluate", "calculate", "Evaluate a mathematical expression.", parameters = schema("expression" to "string")),
+        ToolDefinition("ava.time.now", "current_date_time", "Get current local date, time and time zone.", parameters = schema()),
+        ToolDefinition("ava.date.diff", "date_difference", "Calculate the number of days between two ISO dates.", parameters = schema("start" to "string", "end" to "string")),
+        ToolDefinition("ava.web.read", "read_webpage", "Read and extract readable text from an HTTPS webpage.", parameters = schema("url" to "string")),
+        ToolDefinition("ava.web.search", "search_web", "Search the web using the configured Brave Search API key.", parameters = schema("query" to "string")),
+        ToolDefinition("ava.clipboard.write", "copy_to_clipboard", "Write text to the device clipboard. Clipboard reading is not available.", true, parameters = schema("text" to "string")),
+        ToolDefinition("ava.alarm.set", "set_alarm", "Open the system alarm UI to create an alarm.", true, parameters = schema("hour" to "integer", "minute" to "integer", "message" to "string")),
+        ToolDefinition("ava.calendar.create", "create_calendar_event", "Open the system calendar UI to create an event.", true, parameters = schema("title" to "string", "start_epoch_millis" to "integer", "end_epoch_millis" to "integer", "description" to "string", "location" to "string")),
+        ToolDefinition("ava.fs.replace_many", "replace_text_many_files", "Find and replace exact text across multiple files.", true, parameters = schema("paths" to "array", "old_text" to "string", "new_text" to "string")),
+        ToolDefinition("ava.fs.count", "count_text", "Count words, lines and characters in a text file.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.compare", "compare_files", "Compare two text files line by line.", parameters = schema("first" to "string", "second" to "string")),
+        ToolDefinition("ava.csv.read", "read_csv_table", "Read a CSV file as a table.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.csv.filter", "filter_csv", "Filter CSV rows by a column value.", parameters = schema("path" to "string", "column" to "string", "value" to "string")),
+        ToolDefinition("ava.csv.sort", "sort_csv", "Sort CSV rows by a column.", true, parameters = schema("path" to "string", "column" to "string", "descending" to "boolean")),
+        ToolDefinition("ava.csv.stats", "csv_statistics", "Calculate CSV column statistics.", parameters = schema("path" to "string", "column" to "string")),
+        ToolDefinition("ava.csv.add", "csv_add_row", "Append a row to a CSV file.", true, parameters = schema("path" to "string", "values" to "array")),
+        ToolDefinition("ava.csv.edit", "csv_edit_cell", "Edit a cell in a CSV file.", true, parameters = schema("path" to "string", "row" to "integer", "column" to "string", "value" to "string")),
+        ToolDefinition("ava.json.validate", "validate_json", "Validate JSON syntax.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.json.format", "format_json", "Pretty-print a JSON file.", true, parameters = schema("path" to "string")),
+        ToolDefinition("ava.json.get", "get_json_value", "Read a JSON value by dotted path.", parameters = schema("path" to "string", "pointer" to "string")),
+        ToolDefinition("ava.json.set", "set_json_value", "Set a JSON value by dotted path.", true, parameters = schema("path" to "string", "pointer" to "string", "value" to "string")),
+        ToolDefinition("ava.convert.csv_json", "convert_csv_to_json", "Convert CSV rows to a JSON array of objects.", true, parameters = schema("path" to "string", "destination" to "string")),
+        ToolDefinition("ava.convert.json_csv", "convert_json_to_csv", "Convert a JSON array of objects to CSV.", true, parameters = schema("path" to "string", "destination" to "string")),
+        ToolDefinition("ava.convert.md_html", "convert_markdown_to_html", "Convert Markdown text to basic HTML.", true, parameters = schema("path" to "string", "destination" to "string"))
+    )
+}
+
+private fun validToolName(name: String, provider: ProviderType): Boolean = when (provider) {
+    ProviderType.GEMINI -> Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$").matches(name)
+    else -> Regex("^[A-Za-z0-9_-]{1,64}$").matches(name)
+}
+
+class ToolRegistryStore(context: Context) {
+    private val prefs = context.getSharedPreferences("ava_tool_registry", Context.MODE_PRIVATE)
+    private val defaults = AvaTools.definitions.associateBy { it.uid }
+
+    fun all(): List<ToolControl> = AvaTools.definitions.map { definition ->
+        val raw = prefs.getString(definition.uid, null)
+        if (raw == null) ToolControl(
+            uid = definition.uid,
+            enabled = true,
+            approval = if (definition.writeOperation) ToolApproval.ASK else ToolApproval.AUTO,
+            modelName = definition.defaultName,
+            modelDescription = definition.defaultDescription
+        ) else runCatching {
+            val json = JSONObject(raw)
+            ToolControl(definition.uid, json.optBoolean("enabled", true),
+                runCatching { ToolApproval.valueOf(json.optString("approval")) }.getOrDefault(ToolApproval.ASK),
+                json.optString("modelName", definition.defaultName),
+                json.optString("modelDescription", definition.defaultDescription))
+        }.getOrDefault(ToolControl(definition.uid, true, ToolApproval.ASK, definition.defaultName, definition.defaultDescription))
+    }
+
+    fun validateName(uid: String, name: String, provider: ProviderType): String? {
+        if (defaults[uid] == null) return "Unknown tool UID."
+        if (!validToolName(name, provider)) return if (provider == ProviderType.GEMINI)
+            "Gemini tool names must start with a letter or underscore and contain only letters, numbers or underscores."
+        else "Tool name must use letters, numbers, underscore or hyphen (1–64 characters)."
+        if (all().any { it.uid != uid && it.modelName.equals(name, true) }) return "Another tool already uses this model name."
+        return null
+    }
+
+    fun invalidControls(provider: ProviderType): List<ToolControl> =
+        all().filter { validateName(it.uid, it.modelName, provider) != null }
+
+    fun update(control: ToolControl, provider: ProviderType = ProviderType.OPENAI): String? {
+        val validation = validateName(control.uid, control.modelName, provider)
+        if (validation != null) return validation
+        if (control.modelDescription.isBlank()) return "Model description cannot be empty."
+        prefs.edit().putString(control.uid, JSONObject().put("enabled", control.enabled)
+            .put("approval", control.approval.name).put("modelName", control.modelName)
+            .put("modelDescription", control.modelDescription).toString()).apply()
+        return null
+    }
+
+    fun restore(uid: String) {
+        val definition = defaults[uid] ?: return
+        prefs.edit().remove(uid).apply()
+    }
+
+    fun findByModelName(name: String): ToolControl? = all().firstOrNull {
+        it.enabled && it.approval != ToolApproval.DISABLED && it.modelName == name
+    }
+
+    fun modelTools(allowedUids: Set<String>? = null, provider: ProviderType = ProviderType.OPENAI): JSONArray = JSONArray().apply {
+        val controls = all().filter { it.enabled && it.approval != ToolApproval.DISABLED &&
+            (allowedUids == null || it.uid in allowedUids) && validToolName(it.modelName, provider) }
+        controls.forEach { control ->
+            val definition = defaults[control.uid] ?: return@forEach
+            put(JSONObject().put("type", "function").put("function", JSONObject()
+                .put("name", control.modelName).put("description", control.modelDescription)
+                .put("parameters", definition.parameters)))
+        }
+    }
+
+    fun control(uid: String): ToolControl? = all().firstOrNull { it.uid == uid }
+
+    companion object { }
+}
+
+data class ToolExecution(
+    val uid: String,
+    val arguments: JSONObject,
+    val requiresConfirmation: Boolean,
+    val confirmationSummary: String
+)
+
+data class ToolResult(val uid: String, val success: Boolean, val output: String)
+
+class WorkspaceToolRuntime(
+    private val workspace: WorkspaceStore,
+    private val registry: ToolRegistryStore,
+    private val dailyTools: DailyToolRuntime? = null
+) {
+    fun prepare(modelToolName: String, arguments: JSONObject): ToolExecution {
+        val control = registry.findByModelName(modelToolName) ?: error("Tool is disabled or unknown.")
+        val definition = AvaTools.definitions.first { it.uid == control.uid }
+        val path = arguments.optString("path")
+        val summary = when (control.uid) {
+            "ava.memory.add" -> "Save note: " + arguments.optString("title")
+            "ava.todo.add" -> "Add task: " + arguments.optString("title")
+            "ava.todo.complete" -> "Complete task " + arguments.optString("id")
+            "ava.todo.delete" -> "Delete task " + arguments.optString("id")
+            "ava.clipboard.write" -> "Copy text to device clipboard"
+            "ava.alarm.set" -> "Open alarm setup for " + arguments.optInt("hour") + ":" + arguments.optInt("minute")
+            "ava.calendar.create" -> "Create calendar event: " + arguments.optString("title")
+            "ava.fs.delete" -> "Delete " + path
+            "ava.fs.replace_many" -> "Replace text across " + arguments.optJSONArray("paths")?.length() + " files"
+            "ava.csv.sort", "ava.csv.add", "ava.csv.edit", "ava.json.format", "ava.json.set",
+            "ava.convert.csv_json", "ava.convert.json_csv", "ava.convert.md_html" -> "Modify file " + path
+            "ava.fs.write" -> "Write file " + path + " (" + arguments.optString("mode", "CREATE") + ")"
+            "ava.fs.replace" -> "Replace text in " + path
+            "ava.fs.mkdir" -> "Create folder " + path
+            "ava.fs.move" -> "Move " + arguments.optString("source") + " to " + arguments.optString("destination")
+            "ava.fs.copy" -> "Copy " + arguments.optString("source") + " to " + arguments.optString("destination")
+            "ava.fs.rename" -> "Rename " + path + " to " + arguments.optString("new_name")
+            "ava.fs.zip" -> "Create ZIP " + arguments.optString("destination")
+            "ava.fs.unzip" -> "Extract " + arguments.optString("archive") + " into " + arguments.optString("destination")
+            else -> "Run " + control.modelName
+        }
+        val mustAsk = definition.deleteOperation || control.approval == ToolApproval.ASK
+        return ToolExecution(control.uid, arguments, mustAsk, summary)
+    }
+
+    fun execute(execution: ToolExecution, confirmed: Boolean = false): ToolResult {
+        val definition = AvaTools.definitions.firstOrNull { it.uid == execution.uid }
+            ?: return ToolResult(execution.uid, false, "Unknown tool UID.")
+        if (execution.requiresConfirmation && !confirmed) return ToolResult(execution.uid, false, "Waiting for user confirmation.")
+        return runCatching {
+            val a = execution.arguments
+            val result = when (definition.uid) {
+                "ava.fs.list" -> workspace.list(a.optString("path"), false).joinToString("\n") { if (it.isDirectory) "[DIR] " + it.path else "[FILE] " + it.path }
+                "ava.fs.tree" -> workspace.tree(a.optString("path"))
+                "ava.fs.info" -> workspace.info(a.getString("path")).toString()
+                "ava.fs.read" -> workspace.readText(a.getString("path"), a.takeIf { it.has("start_line") }?.getInt("start_line"),
+                    a.takeIf { it.has("end_line") }?.getInt("end_line"))
+                "ava.fs.read_many" -> workspace.readMany(a.getJSONArray("paths").let { array -> (0 until array.length()).map { array.getString(it) } }).toString()
+                "ava.fs.search_name" -> workspace.searchNames(a.getString("query")).joinToString("\n") { it.path }
+                "ava.fs.search_text" -> workspace.searchContents(a.getString("query")).joinToString("\n") { it.first + ":" + it.second }
+                "ava.fs.mkdir" -> workspace.mkdir(a.getString("path"))
+                "ava.fs.write" -> workspace.writeText(a.getString("path"), a.optString("content"),
+                    runCatching { TextWriteMode.valueOf(a.optString("mode", "CREATE").uppercase()) }.getOrDefault(TextWriteMode.CREATE),
+                    a.takeIf { it.has("line") }?.getInt("line"), a.takeIf { it.has("end_line") }?.getInt("end_line"))
+                "ava.fs.replace" -> "Replaced " + workspace.replace(a.getString("path"), a.getString("old_text"), a.getString("new_text")) + " occurrence(s)."
+                "ava.fs.copy" -> workspace.copy(a.getString("source"), a.getString("destination"))
+                "ava.fs.move" -> workspace.move(a.getString("source"), a.getString("destination"))
+                "ava.fs.rename" -> workspace.rename(a.getString("path"), a.getString("new_name"))
+                "ava.fs.delete" -> workspace.delete(a.getString("path"), confirmed)
+                "ava.fs.zip" -> workspace.zip(a.getString("source"), a.getString("destination"))
+                "ava.fs.unzip" -> workspace.unzip(a.getString("archive"), a.getString("destination"))
+                "ava.fs.replace_many" -> {
+                    val paths = a.getJSONArray("paths").let { array -> (0 until array.length()).map { array.getString(it) } }
+                    "Replaced " + paths.sumOf { path: String -> runCatching { StructuredTextTools.replaceCount(workspace, path, a.getString("old_text"), a.getString("new_text")) }.getOrDefault(0) } + " occurrence(s)."
+                }
+                "ava.fs.count" -> StructuredTextTools.count(workspace.readText(a.getString("path")))
+                "ava.fs.compare" -> StructuredTextTools.compare(workspace, a.getString("first"), a.getString("second"))
+                "ava.csv.read" -> StructuredTextTools.csvRead(workspace, a.getString("path"))
+                "ava.csv.filter" -> StructuredTextTools.csvFilter(workspace, a.getString("path"), a.getString("column"), a.getString("value"))
+                "ava.csv.sort" -> StructuredTextTools.csvSort(workspace, a.getString("path"), a.getString("column"), a.optBoolean("descending"))
+                "ava.csv.stats" -> StructuredTextTools.csvStats(workspace, a.getString("path"), a.getString("column"))
+                "ava.csv.add" -> StructuredTextTools.csvAddRow(workspace, a.getString("path"), a.getJSONArray("values"))
+                "ava.csv.edit" -> StructuredTextTools.csvEditCell(workspace, a.getString("path"), a.getInt("row"), a.getString("column"), a.getString("value"))
+                "ava.json.validate" -> StructuredTextTools.jsonValidate(workspace, a.getString("path"))
+                "ava.json.format" -> StructuredTextTools.jsonFormat(workspace, a.getString("path"))
+                "ava.json.get" -> StructuredTextTools.jsonGet(workspace, a.getString("path"), a.getString("pointer"))
+                "ava.json.set" -> StructuredTextTools.jsonSet(workspace, a.getString("path"), a.getString("pointer"), a.getString("value"))
+                "ava.convert.csv_json" -> StructuredTextTools.csvToJson(workspace, a.getString("path"), a.getString("destination"))
+                "ava.convert.json_csv" -> StructuredTextTools.jsonToCsv(workspace, a.getString("path"), a.getString("destination"))
+                "ava.convert.md_html" -> StructuredTextTools.markdownToHtml(workspace, a.getString("path"), a.getString("destination"))
+                else -> requireNotNull(dailyTools) { "Daily tools are unavailable." }.execute(execution.uid, a, confirmed)
+            }
+            ToolResult(execution.uid, true, result)
+        }.getOrElse { ToolResult(execution.uid, false, it.message ?: "Tool failed.") }
+    }
+}
