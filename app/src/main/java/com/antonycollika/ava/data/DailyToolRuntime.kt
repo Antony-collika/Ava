@@ -3,6 +3,9 @@ package com.antonycollika.ava.data
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.provider.AlarmClock
+import android.provider.CalendarContract
 import com.antonycollika.ava.SecureKeyStore
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,8 +43,30 @@ class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
         "ava.web.search" -> searchWeb(args.getString("query"))
         "ava.clipboard.write" -> {
             val manager = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            manager.setPrimaryClip(ClipData.newPlainText("Ava", args.getString("text")))
-            "Copied text to the device clipboard."
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                manager.setPrimaryClip(ClipData.newPlainText("Ava", args.getString("text")))
+            }
+            "Clipboard write requested."
+        }
+        "ava.alarm.set" -> {
+            val hour = args.getInt("hour"); val minute = args.getInt("minute")
+            require(hour in 0..23 && minute in 0..59)
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, hour)
+                .putExtra(AlarmClock.EXTRA_MINUTES, minute).putExtra(AlarmClock.EXTRA_MESSAGE, args.optString("message"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent); "Opened the system alarm confirmation screen."
+        }
+        "ava.calendar.create" -> {
+            val start = args.getLong("start_epoch_millis"); val end = args.getLong("end_epoch_millis")
+            require(end > start)
+            val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+                .putExtra(CalendarContract.Events.TITLE, args.getString("title"))
+                .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
+                .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end)
+                .putExtra(CalendarContract.Events.DESCRIPTION, args.optString("description"))
+                .putExtra(CalendarContract.Events.EVENT_LOCATION, args.optString("location"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent); "Opened the system calendar event editor."
         }
         else -> error("Unknown daily tool UID.")
     }
@@ -79,7 +104,10 @@ class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
 
     private fun readWeb(rawUrl: String): String {
         val uri = android.net.Uri.parse(rawUrl)
-        require(uri.scheme == "https" && !uri.host.isNullOrBlank()) { "Only HTTPS webpages are supported." }
+        val host = uri.host?.lowercase().orEmpty()
+        require(uri.scheme == "https" && host.isNotBlank() && host != "localhost" && !host.endsWith(".local") &&
+            !host.startsWith("127.") && !host.startsWith("10.") && !host.startsWith("192.168.") &&
+            !Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.").containsMatchIn(host)) { "Only public HTTPS webpages are supported." }
         val request = Request.Builder().url(rawUrl).header("User-Agent", "AvaAndroid/1.0").build()
         http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Web request failed: HTTP " + response.code)
