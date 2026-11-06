@@ -44,7 +44,7 @@ fun AvaApp(
     val messages = remember { mutableStateListOf<ChatMessage>().apply {
         addAll(conversations.firstOrNull()?.messages.orEmpty())
     } }
-    var showSettings by remember { mutableStateOf(!keyStore.hasKey()) }
+    var showSettings by remember { mutableStateOf(!keyStore.hasKey(settings.provider.name)) }
     var showHistory by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
@@ -86,12 +86,12 @@ fun AvaApp(
         if (showSettings) {
             ProviderSettingsScreen(
                 initial = settings,
-                hasSavedKey = keyStore.hasKey(),
+                hasSavedKey = keyStore.hasKey(settings.provider.name),
                 onBack = { showSettings = false },
-                onRemoveKey = { keyStore.clear() },
+                onRemoveKey = { keyStore.clear(settings.provider.name) },
                 onSave = { updated, key ->
                     settingsStore.save(updated)
-                    if (key.isNotBlank()) keyStore.save(key.trim())
+                    if (key.isNotBlank()) keyStore.save(key.trim(), updated.provider.name)
                     settings = updated
                     showSettings = false
                     errorMessage = null
@@ -149,7 +149,7 @@ fun AvaApp(
                                         sending = false
                                     } else {
                                         val prompt = draft.trim()
-                                        val key = keyStore.read()
+                                        val key = keyStore.read(settings.provider.name)
                                         if (prompt.isNotEmpty()) {
                                             if (key.isNullOrBlank()) {
                                                 errorMessage = "Add your API key in Settings to start chatting."
@@ -226,7 +226,7 @@ fun AvaApp(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(20.dp))
                                 OutlinedButton(onClick = { showSettings = true }) {
-                                    Text(if (keyStore.hasKey()) "Provider settings" else "Add API key")
+                                    Text(if (keyStore.hasKey(settings.provider.name)) "Provider settings" else "Add API key")
                                 }
                             }
                         }
