@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -59,6 +61,15 @@ fun AvaApp(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var generationJob by remember { mutableStateOf<Job?>(null) }
     var activeRunId by remember { mutableStateOf<String?>(null) }
+    var editingMessageId by remember { mutableStateOf<String?>(null) }
+    var editingText by remember { mutableStateOf("") }
+    var editThenRegenerate by remember { mutableStateOf(false) }
+    var pendingRegenerationIndex by remember { mutableStateOf<Int?>(null) }
+    var renameConversationId by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var historySearch by remember { mutableStateOf("") }
+    var darkTheme by remember { mutableStateOf(true) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     fun persist() {
@@ -92,7 +103,93 @@ fun AvaApp(
         showHistory = false
     }
 
-    MaterialTheme(colorScheme = darkColorScheme(
+    fun startStreaming(requestHistory: List<ChatMessage>) {
+        val key = keyStore.read(settings.provider.name)
+        if (key.isNullOrBlank()) {
+            if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) messages.removeAt(messages.lastIndex)
+            errorMessage = "Add your API key in Settings to start chatting."
+            showSettings = true
+            sending = false
+            return
+        }
+        val runId = UUID.randomUUID().toString()
+        activeRunId = runId
+        sending = true
+        persist()
+        generationJob = scope.launch {
+            val answer = StringBuilder()
+            try {
+                providerClient.stream(settings, key, requestHistory).collect { chunk ->
+                    if (activeRunId == runId) {
+                        answer.append(chunk)
+                        val index = messages.indexOfLast { it.role == "assistant" }
+                        if (index >= 0) {
+                            messages[index] = messages[index].copy(content = answer.toString())
+                            persist()
+                        }
+                    }
+                }
+                if (activeRunId == runId && answer.isEmpty()) {
+                    errorMessage = "The provider returned no text. Check the selected model and provider settings."
+                    if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) messages.removeAt(messages.lastIndex)
+                }
+            } catch (failure: Throwable) {
+                if (activeRunId == runId && failure !is kotlinx.coroutines.CancellationException) {
+                    errorMessage = failure.message ?: "Unable to reach the provider."
+                    if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) messages.removeAt(messages.lastIndex)
+                }
+            } finally {
+                if (activeRunId == runId) {
+                    activeRunId = null
+                    sending = false
+                    persist()
+                }
+            }
+        }
+    }
+
+    fun regenerateAt(userIndex: Int, createBranch: Boolean) {
+        if (sending || userIndex !in messages.indices || messages[userIndex].role != "user") return
+        if (keyStore.read(settings.provider.name).isNullOrBlank()) {
+            errorMessage = "Add your API key in Settings to regenerate this response."
+            showSettings = true
+            return
+        }
+        val prefix = messages.take(userIndex + 1)
+        if (createBranch) {
+            persist()
+            activeId = UUID.randomUUID().toString()
+            messages.clear()
+            messages.addAll(prefix)
+        } else {
+            while (messages.size > userIndex + 1) messages.removeAt(messages.lastIndex)
+        }
+        errorMessage = null
+        messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
+        startStreaming(prefix)
+    }
+
+    fun requestRegeneration(selectedIndex: Int) {
+        if (sending) return
+        val plan = ConversationOperations.regenerationPlan(messages, selectedIndex) ?: return
+        if (plan.hasFollowingMessages) pendingRegenerationIndex = plan.userMessageIndex
+        else regenerateAt(plan.userMessageIndex, createBranch = false)
+    }
+
+    fun branchAt(selectedIndex: Int) {
+        if (sending || selectedIndex !in messages.indices) return
+        val prefix = ConversationOperations.branchPrefix(messages, selectedIndex)
+        if (prefix.isEmpty()) return
+        persist()
+        activeId = UUID.randomUUID().toString()
+        messages.clear()
+        messages.addAll(prefix)
+        errorMessage = null
+        showHistory = false
+        persist()
+    }
+
+    MaterialTheme(colorScheme = if (darkTheme) darkColorScheme(
         primary = Color(0xFFC5B5FF),
         onPrimary = Color(0xFF241A42),
         background = Color(0xFF101014),
@@ -100,7 +197,7 @@ fun AvaApp(
         surfaceVariant = Color(0xFF292832),
         onSurface = Color(0xFFF2F0F7),
         onSurfaceVariant = Color(0xFFB6B1C2)
-    )) {
+    ) else lightColorScheme()) {
         if (showSettings) {
             ProviderSettingsScreen(
                 initial = settings,
@@ -129,6 +226,7 @@ fun AvaApp(
             )
         } else {
             Scaffold(
+                snackbarHost = { SnackbarHost(snackbarHostState) },
                 topBar = {
                     CenterAlignedTopAppBar(
                         title = {
@@ -148,6 +246,9 @@ fun AvaApp(
                             }
                         },
                         actions = {
+                            IconButton(onClick = { darkTheme = !darkTheme }) {
+                                Text(if (darkTheme) "☼" else "☾")
+                            }
                             IconButton(onClick = ::startNewChat) {
                                 Icon(Icons.Default.Add, contentDescription = "New chat")
                             }
@@ -178,59 +279,12 @@ fun AvaApp(
                                         cancelGeneration()
                                     } else {
                                         val prompt = draft.trim()
-                                        val key = keyStore.read(settings.provider.name)
                                         if (prompt.isNotEmpty()) {
-                                            if (key.isNullOrBlank()) {
-                                                errorMessage = "Add your API key in Settings to start chatting."
-                                                showSettings = true
-                                            } else {
-                                                draft = ""
-                                                errorMessage = null
-                                                val requestHistory = messages.toList() + ChatMessage(
-                                                    id = UUID.randomUUID().toString(),
-                                                    role = "user",
-                                                    content = prompt
-                                                )
-                                                messages.add(requestHistory.last())
-                                                messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
-                                                sending = true
-                                                persist()
-                                                val runId = UUID.randomUUID().toString()
-                                                activeRunId = runId
-                                                generationJob = scope.launch {
-                                                    val answer = StringBuilder()
-                                                    try {
-                                                        providerClient.stream(settings, key, requestHistory).collect { chunk ->
-                                                            if (activeRunId == runId) {
-                                                                answer.append(chunk)
-                                                                if (messages.isNotEmpty()) {
-                                                                    messages[messages.lastIndex] = messages.last().copy(content = answer.toString())
-                                                                    persist()
-                                                                }
-                                                            }
-                                                        }
-                                                        if (activeRunId == runId && answer.isEmpty()) {
-                                                            errorMessage = "The provider returned no text. Check the selected model and provider settings."
-                                                            if (messages.lastOrNull()?.role == "assistant" && messages.last().content.isBlank()) {
-                                                                messages.removeAt(messages.lastIndex)
-                                                            }
-                                                        }
-                                                    } catch (failure: Throwable) {
-                                                        if (activeRunId == runId && failure !is kotlinx.coroutines.CancellationException) {
-                                                            errorMessage = failure.message ?: "Unable to reach the provider."
-                                                            if (messages.lastOrNull()?.role == "assistant" && messages.last().content.isBlank()) {
-                                                                messages.removeAt(messages.lastIndex)
-                                                            }
-                                                        }
-                                                    } finally {
-                                                        if (activeRunId == runId) {
-                                                            activeRunId = null
-                                                            sending = false
-                                                            persist()
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            draft = ""
+                                            errorMessage = null
+                                            messages.add(ChatMessage(UUID.randomUUID().toString(), "user", prompt))
+                                            messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
+                                            startStreaming(messages.dropLast(1).toList())
                                         }
                                     }
                                 },
@@ -283,7 +337,53 @@ fun AvaApp(
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
                             items(messages, key = { it.id }) { message ->
-                                MessageBubble(message)
+                                val messageIndex = messages.indexOfFirst { it.id == message.id }
+                                MessageBubble(
+                                    message = message,
+                                    enabled = !sending,
+                                    editing = editingMessageId == message.id,
+                                    editText = editingText,
+                                    onEditTextChange = { editingText = it },
+                                    onSaveEdit = {
+                                        if (messageIndex in messages.indices) {
+                                            messages[messageIndex] = messages[messageIndex].copy(content = editingText, edited = true)
+                                            val shouldRegenerate = editThenRegenerate && message.role == "user"
+                                            editingMessageId = null
+                                            editThenRegenerate = false
+                                            persist()
+                                            if (shouldRegenerate) requestRegeneration(messageIndex)
+                                        }
+                                    },
+                                    onCancelEdit = { editingMessageId = null; editThenRegenerate = false },
+                                    onAction = { action ->
+                                        when (action) {
+                                            MessageAction.EDIT -> {
+                                                editingMessageId = message.id; editingText = message.content; editThenRegenerate = false
+                                            }
+                                            MessageAction.EDIT_AND_REGENERATE -> {
+                                                editingMessageId = message.id; editingText = message.content; editThenRegenerate = true
+                                            }
+                                            MessageAction.REGENERATE -> requestRegeneration(messageIndex)
+                                            MessageAction.BRANCH -> branchAt(messageIndex)
+                                            MessageAction.DELETE -> {
+                                                val before = messages.toList()
+                                                val after = ConversationOperations.deleteTurn(before, messageIndex)
+                                                if (after != before) {
+                                                    messages.clear(); messages.addAll(after); persist()
+                                                    scope.launch {
+                                                        val result = snackbarHostState.showSnackbar(
+                                                            "Message turn deleted", actionLabel = "Undo",
+                                                            withDismissAction = true, duration = SnackbarDuration.Short
+                                                        )
+                                                        if (result == SnackbarResult.ActionPerformed) {
+                                                            messages.clear(); messages.addAll(before); persist()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
                             }
                             if (sending && messages.lastOrNull()?.content.isNullOrEmpty()) {
                                 item { Text("Ava is thinking…", color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -295,6 +395,50 @@ fun AvaApp(
             }
         }
 
+        if (pendingRegenerationIndex != null) {
+            AlertDialog(
+                onDismissRequest = { pendingRegenerationIndex = null },
+                title = { Text("Regenerate response?") },
+                text = { Text("There are later messages in this conversation. Create a new branch?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val index = pendingRegenerationIndex ?: return@TextButton
+                        pendingRegenerationIndex = null
+                        regenerateAt(index, createBranch = true)
+                    }) { Text("Create branch") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        val index = pendingRegenerationIndex ?: return@TextButton
+                        pendingRegenerationIndex = null
+                        regenerateAt(index, createBranch = false)
+                    }) { Text("Regenerate here") }
+                }
+            )
+        }
+        if (renameConversationId != null) {
+            AlertDialog(
+                onDismissRequest = { renameConversationId = null },
+                title = { Text("Rename conversation") },
+                text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val id = renameConversationId ?: return@TextButton
+                        val target = conversations.firstOrNull { it.id == id }
+                        if (target != null) {
+                            val updated = target.copy(title = renameText.trim().ifBlank { "New chat" },
+                                updatedAt = System.currentTimeMillis())
+                            conversationStore.save(updated)
+                            val index = conversations.indexOfFirst { it.id == id }
+                            if (index >= 0) conversations[index] = updated
+                        }
+                        renameConversationId = null
+                    }) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { renameConversationId = null }) { Text("Cancel") } }
+            )
+        }
         if (showHistory) {
             ModalBottomSheet(onDismissRequest = { showHistory = false }) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
@@ -303,11 +447,19 @@ fun AvaApp(
                         Text("Your conversations", style = MaterialTheme.typography.titleLarge)
                         TextButton(onClick = ::startNewChat) { Text("New chat") }
                     }
+                    OutlinedTextField(
+                        value = historySearch, onValueChange = { historySearch = it },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        placeholder = { Text("Search conversations and messages") }
+                    )
                     if (conversations.isEmpty()) {
                         Text("Your saved chats will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 24.dp))
                     } else {
-                        conversations.forEach { conversation ->
+                        conversations.filter { conversation ->
+                            historySearch.isBlank() || conversation.title.contains(historySearch, true) ||
+                                conversation.messages.any { it.content.contains(historySearch, true) }
+                        }.forEach { conversation ->
                             Row(Modifier.fillMaxWidth().clickable {
                                 cancelGeneration()
                                 activeId = conversation.id
@@ -322,6 +474,10 @@ fun AvaApp(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
+                                IconButton(onClick = {
+                                    renameConversationId = conversation.id
+                                    renameText = conversation.title
+                                }) { Text("✎") }
                                 IconButton(onClick = {
                                     conversationStore.delete(conversation.id)
                                     conversations.removeAll { it.id == conversation.id }
@@ -342,24 +498,86 @@ fun AvaApp(
     }
 }
 
+private enum class MessageAction { EDIT, EDIT_AND_REGENERATE, REGENERATE, BRANCH, DELETE }
+
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(
+    message: ChatMessage,
+    enabled: Boolean,
+    editing: Boolean,
+    editText: String,
+    onEditTextChange: (String) -> Unit,
+    onSaveEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onAction: (MessageAction) -> Unit
+) {
     val isUser = message.role == "user"
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (isUser) Color(0xFF342C4D) else Color.Transparent,
-            shape = RoundedCornerShape(if (isUser) 22.dp else 8.dp),
-            modifier = Modifier.widthIn(max = 680.dp)
-        ) {
-            SelectionContainer {
-                Text(
-                    text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
-                    modifier = Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight
-                )
+    val clipboard = LocalClipboardManager.current
+    var menuExpanded by remember(message.id) { mutableStateOf(false) }
+    var expandedEditor by remember(message.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+        if (message.edited) Text("edited", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (editing) {
+            Surface(
+                color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    OutlinedTextField(value = editText, onValueChange = onEditTextChange,
+                        modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 8)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { expandedEditor = true }) { Text("Expand") }
+                        TextButton(onClick = onCancelEdit) { Text("Cancel") }
+                        Button(onClick = onSaveEdit, enabled = editText.isNotBlank()) { Text("Save") }
+                    }
+                }
+            }
+        } else {
+            Surface(
+                color = if (isUser) Color(0xFF342C4D) else Color.Transparent,
+                shape = RoundedCornerShape(if (isUser) 22.dp else 8.dp),
+                modifier = Modifier.widthIn(max = 680.dp)
+            ) {
+                SelectionContainer {
+                    Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
+                        modifier = Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodyLarge, lineHeight = MaterialTheme.typography.bodyLarge.lineHeight)
+                }
+            }
+            Box {
+                TextButton(onClick = { menuExpanded = true }, enabled = enabled) { Text("⋯") }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("Copy") }, onClick = {
+                        clipboard.setText(AnnotatedString(message.content)); menuExpanded = false
+                    })
+                    DropdownMenuItem(text = { Text("Edit message") }, onClick = {
+                        menuExpanded = false; onAction(MessageAction.EDIT)
+                    })
+                    if (isUser) {
+                        DropdownMenuItem(text = { Text("Edit & regenerate") }, onClick = {
+                            menuExpanded = false; onAction(MessageAction.EDIT_AND_REGENERATE)
+                        })
+                        DropdownMenuItem(text = { Text("Regenerate") }, onClick = {
+                            menuExpanded = false; onAction(MessageAction.REGENERATE)
+                        })
+                    } else {
+                        DropdownMenuItem(text = { Text("Branch in new chat") }, onClick = {
+                            menuExpanded = false; onAction(MessageAction.BRANCH)
+                        })
+                    }
+                    DropdownMenuItem(text = { Text("Delete turn") }, onClick = {
+                        menuExpanded = false; onAction(MessageAction.DELETE)
+                    })
+                }
             }
         }
+    }
+    if (expandedEditor) {
+        AlertDialog(onDismissRequest = { expandedEditor = false }, title = { Text("Edit message") },
+            text = { OutlinedTextField(value = editText, onValueChange = onEditTextChange,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 520.dp), minLines = 10) },
+            confirmButton = { TextButton(onClick = { expandedEditor = false }) { Text("Done") } })
     }
 }
 
