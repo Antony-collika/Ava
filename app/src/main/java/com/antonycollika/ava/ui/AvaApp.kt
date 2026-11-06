@@ -315,9 +315,9 @@ private fun MessageBubble(message: ChatMessage) {
 @Composable
 private fun ProviderSettingsScreen(
     initial: ProviderSettings,
-    hasSavedKey: Boolean,
+    hasSavedKey: (ProviderType) -> Boolean,
     onBack: () -> Unit,
-    onRemoveKey: () -> Unit,
+    onRemoveKey: (ProviderType) -> Unit,
     onSave: (ProviderSettings, String) -> Unit
 ) {
     var provider by remember(initial) { mutableStateOf(initial.provider) }
@@ -326,7 +326,8 @@ private fun ProviderSettingsScreen(
     var systemPrompt by remember(initial) { mutableStateOf(initial.systemPrompt) }
     var apiKey by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
-    var showKey by remember { mutableStateOf(false) }\n    val currentHasKey = hasSavedKey(provider)
+    var showKey by remember { mutableStateOf(false) }
+    val currentHasKey = hasSavedKey(provider)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -379,8 +380,8 @@ private fun ProviderSettingsScreen(
                 label = { Text("System prompt (optional)") }, modifier = Modifier.fillMaxWidth(),
                 minLines = 2, maxLines = 4
             )
-            if (hasSavedKey) {
-                TextButton(onClick = onRemoveKey) { Text("Remove saved API key") }
+            if (currentHasKey) {
+                TextButton(onClick = { onRemoveKey(provider) }) { Text("Remove saved API key") }
             }
             Spacer(Modifier.weight(1f))
             Button(
