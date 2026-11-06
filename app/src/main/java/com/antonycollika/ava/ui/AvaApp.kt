@@ -71,6 +71,8 @@ fun AvaApp(
     var showHistory by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var workspaceMessage by remember { mutableStateOf<String?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     var pendingToolExecution by remember { mutableStateOf<ToolExecution?>(null) }
     var pendingToolDecision by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
     val dailyToolRuntime = remember(context, keyStore) { DailyToolRuntime(context, keyStore) }
@@ -84,7 +86,6 @@ fun AvaApp(
     }
     var draft by remember { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<MessageAttachment>>(emptyList()) }
-    val context = LocalContext.current
     val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
         val imported = uris.take((4 - pendingAttachments.size).coerceAtLeast(0)).mapNotNull { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) }
             .onFailure { errorMessage = it.message ?: "Unable to attach this image." }.getOrNull() }
@@ -96,7 +97,6 @@ fun AvaApp(
             .onFailure { errorMessage = it.message ?: "Unable to save camera image." }
     }
     var sending by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
     var generationJob by remember { mutableStateOf<Job?>(null) }
     var activeRunId by remember { mutableStateOf<String?>(null) }
     var editingMessageId by remember { mutableStateOf<String?>(null) }
