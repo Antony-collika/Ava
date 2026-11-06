@@ -5,8 +5,8 @@ import org.json.JSONObject
 
 enum class ProviderType(val label: String, val defaultModel: String, val defaultBaseUrl: String) {
     OPENAI("OpenAI", "gpt-4o-mini", "https://api.openai.com/v1"),
-    ANTHROPIC("Anthropic", "claude-3-5-haiku-latest", "https://api.anthropic.com/v1"),
-    GEMINI("Google Gemini", "gemini-2.0-flash", "https://generativelanguage.googleapis.com/v1beta"),
+    ANTHROPIC("Anthropic", "claude-sonnet-4-5", "https://api.anthropic.com/v1"),
+    GEMINI("Google Gemini", "gemini-2.5-flash", "https://generativelanguage.googleapis.com/v1beta"),
     OPENAI_COMPATIBLE("OpenAI-compatible", "", "https://");
 
     companion object {
