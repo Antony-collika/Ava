@@ -74,10 +74,18 @@ fun AvaApp(
         conversations.sortByDescending { it.updatedAt }
     }
 
-    fun startNewChat() {
+    fun cancelGeneration(persistPartial: Boolean = true) {
         activeRunId = null
         generationJob?.cancel()
         sending = false
+        if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) {
+            messages.removeAt(messages.lastIndex)
+        }
+        if (persistPartial) persist()
+    }
+
+    fun startNewChat() {
+        cancelGeneration()
         messages.clear()
         activeId = UUID.randomUUID().toString()
         errorMessage = null
@@ -167,9 +175,7 @@ fun AvaApp(
                             FilledIconButton(
                                 onClick = {
                                     if (sending) {
-                                        activeRunId = null
-                                        generationJob?.cancel()
-                                        sending = false
+                                        cancelGeneration()
                                     } else {
                                         val prompt = draft.trim()
                                         val key = keyStore.read(settings.provider.name)
@@ -303,9 +309,7 @@ fun AvaApp(
                     } else {
                         conversations.forEach { conversation ->
                             Row(Modifier.fillMaxWidth().clickable {
-                                activeRunId = null
-                                generationJob?.cancel()
-                                sending = false
+                                cancelGeneration()
                                 activeId = conversation.id
                                 messages.clear()
                                 messages.addAll(conversation.messages)
@@ -321,7 +325,13 @@ fun AvaApp(
                                 IconButton(onClick = {
                                     conversationStore.delete(conversation.id)
                                     conversations.removeAll { it.id == conversation.id }
-                                    if (activeId == conversation.id) startNewChat()
+                                    if (activeId == conversation.id) {
+                                        cancelGeneration(persistPartial = false)
+                                        messages.clear()
+                                        activeId = UUID.randomUUID().toString()
+                                        errorMessage = null
+                                        showHistory = false
+                                    }
                                 }) { Icon(Icons.Default.DeleteOutline, contentDescription = "Delete conversation") }
                             }
                         }
