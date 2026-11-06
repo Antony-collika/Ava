@@ -18,7 +18,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
         initialMessages: List<ChatMessage>,
         registry: ToolRegistryStore,
         runtime: WorkspaceToolRuntime,
-        toolsAvailable: Boolean,
+        allowedToolUids: Set<String>,
         confirm: suspend (ToolExecution) -> Boolean,
         onText: (String) -> Unit,
         onAssistantToolCalls: (ChatMessage) -> Unit,
@@ -29,7 +29,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
         val transcript = initialMessages.toMutableList()
         val finalText = StringBuilder()
         repeat(MAX_TOOL_ROUNDS) { round ->
-            val tools = if (toolsAvailable) registry.modelTools() else JSONArray()
+            val tools = registry.modelTools(allowedToolUids)
             val calls = linkedMapOf<Int, ToolCall>()
             val responseText = StringBuilder()
             providerClient.streamEvents(settings, apiKey, transcript, tools, registry).collect { event ->
@@ -48,7 +48,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
                 }
             }
             if (calls.isEmpty()) return finalText.toString()
-            if (!toolsAvailable) {
+            if (allowedToolUids.isEmpty()) {
                 onToolStatus("File tools are blocked until a workspace folder is selected.")
                 return finalText.toString()
             }
