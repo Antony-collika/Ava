@@ -23,6 +23,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
         onText: (String) -> Unit,
         onAssistantToolCalls: (ChatMessage) -> Unit,
         onToolResult: (ChatMessage) -> Unit,
+        onToolRoundComplete: () -> Unit,
         onToolStatus: (String) -> Unit
     ): String {
         val transcript = initialMessages.toMutableList()
@@ -89,6 +90,7 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
                 transcript += toolMessage
                 onToolResult(toolMessage)
             }
+            onToolRoundComplete()
             if (round == MAX_TOOL_ROUNDS - 1) {
                 onToolStatus("Stopped after the maximum of " + MAX_TOOL_ROUNDS + " consecutive tool rounds.")
             }
