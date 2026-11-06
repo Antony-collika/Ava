@@ -86,9 +86,9 @@ fun AvaApp(
         if (showSettings) {
             ProviderSettingsScreen(
                 initial = settings,
-                hasSavedKey = keyStore.hasKey(settings.provider.name),
+                hasSavedKey = { selected -> keyStore.hasKey(selected.name) },
                 onBack = { showSettings = false },
-                onRemoveKey = { keyStore.clear(settings.provider.name) },
+                onRemoveKey = { selected -> keyStore.clear(selected.name) },
                 onSave = { updated, key ->
                     settingsStore.save(updated)
                     if (key.isNotBlank()) keyStore.save(key.trim(), updated.provider.name)
@@ -326,7 +326,7 @@ private fun ProviderSettingsScreen(
     var systemPrompt by remember(initial) { mutableStateOf(initial.systemPrompt) }
     var apiKey by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
-    var showKey by remember { mutableStateOf(false) }
+    var showKey by remember { mutableStateOf(false) }\n    val currentHasKey = hasSavedKey(provider)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -365,7 +365,7 @@ private fun ProviderSettingsScreen(
             )
             OutlinedTextField(
                 value = apiKey, onValueChange = { apiKey = it },
-                label = { Text(if (hasSavedKey) "API key saved · enter to replace" else "API key") },
+                label = { Text(if (currentHasKey) "API key saved · enter to replace" else "API key") },
                 visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = { TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "Hide" else "Show") } },
                 modifier = Modifier.fillMaxWidth(), singleLine = true
@@ -386,7 +386,7 @@ private fun ProviderSettingsScreen(
             Button(
                 onClick = { onSave(ProviderSettings(provider, model.trim(), baseUrl.trim(), systemPrompt), apiKey) },
                 enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&
-                    (apiKey.isNotBlank() || hasSavedKey),
+                    (apiKey.isNotBlank() || currentHasKey),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save and start chatting") }
             Text(
