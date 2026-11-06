@@ -60,7 +60,23 @@ object AvaTools {
         ToolDefinition("ava.date.diff", "date_difference", "Calculate the number of days between two ISO dates.", parameters = schema("start" to "string", "end" to "string")),
         ToolDefinition("ava.web.read", "read_webpage", "Read and extract readable text from an HTTPS webpage.", parameters = schema("url" to "string")),
         ToolDefinition("ava.web.search", "search_web", "Search the web using the configured Brave Search API key.", parameters = schema("query" to "string")),
-        ToolDefinition("ava.clipboard.write", "copy_to_clipboard", "Write text to the device clipboard. Clipboard reading is not available.", true, parameters = schema("text" to "string"))
+        ToolDefinition("ava.clipboard.write", "copy_to_clipboard", "Write text to the device clipboard. Clipboard reading is not available.", true, parameters = schema("text" to "string")),
+        ToolDefinition("ava.fs.replace_many", "replace_text_many_files", "Find and replace exact text across multiple files.", true, parameters = schema("paths" to "array", "old_text" to "string", "new_text" to "string")),
+        ToolDefinition("ava.fs.count", "count_text", "Count words, lines and characters in a text file.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.fs.compare", "compare_files", "Compare two text files line by line.", parameters = schema("first" to "string", "second" to "string")),
+        ToolDefinition("ava.csv.read", "read_csv_table", "Read a CSV file as a table.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.csv.filter", "filter_csv", "Filter CSV rows by a column value.", parameters = schema("path" to "string", "column" to "string", "value" to "string")),
+        ToolDefinition("ava.csv.sort", "sort_csv", "Sort CSV rows by a column.", true, parameters = schema("path" to "string", "column" to "string", "descending" to "boolean")),
+        ToolDefinition("ava.csv.stats", "csv_statistics", "Calculate CSV column statistics.", parameters = schema("path" to "string", "column" to "string")),
+        ToolDefinition("ava.csv.add", "csv_add_row", "Append a row to a CSV file.", true, parameters = schema("path" to "string", "values" to "array")),
+        ToolDefinition("ava.csv.edit", "csv_edit_cell", "Edit a cell in a CSV file.", true, parameters = schema("path" to "string", "row" to "integer", "column" to "string", "value" to "string")),
+        ToolDefinition("ava.json.validate", "validate_json", "Validate JSON syntax.", parameters = schema("path" to "string")),
+        ToolDefinition("ava.json.format", "format_json", "Pretty-print a JSON file.", true, parameters = schema("path" to "string")),
+        ToolDefinition("ava.json.get", "get_json_value", "Read a JSON value by dotted path.", parameters = schema("path" to "string", "pointer" to "string")),
+        ToolDefinition("ava.json.set", "set_json_value", "Set a JSON value by dotted path.", true, parameters = schema("path" to "string", "pointer" to "string", "value" to "string")),
+        ToolDefinition("ava.convert.csv_json", "convert_csv_to_json", "Convert CSV rows to a JSON array of objects.", true, parameters = schema("path" to "string", "destination" to "string")),
+        ToolDefinition("ava.convert.json_csv", "convert_json_to_csv", "Convert a JSON array of objects to CSV.", true, parameters = schema("path" to "string", "destination" to "string")),
+        ToolDefinition("ava.convert.md_html", "convert_markdown_to_html", "Convert Markdown text to basic HTML.", true, parameters = schema("path" to "string", "destination" to "string"))
     )
 }
 
@@ -145,6 +161,9 @@ class WorkspaceToolRuntime(
             "ava.todo.delete" -> "Delete task " + arguments.optString("id")
             "ava.clipboard.write" -> "Copy text to device clipboard"
             "ava.fs.delete" -> "Delete " + path
+            "ava.fs.replace_many" -> "Replace text across " + arguments.optJSONArray("paths")?.length() + " files"
+            "ava.csv.sort", "ava.csv.add", "ava.csv.edit", "ava.json.format", "ava.json.set",
+            "ava.convert.csv_json", "ava.convert.json_csv", "ava.convert.md_html" -> "Modify file " + path
             "ava.fs.write" -> "Write file " + path + " (" + arguments.optString("mode", "CREATE") + ")"
             "ava.fs.replace" -> "Replace text in " + path
             "ava.fs.mkdir" -> "Create folder " + path
@@ -185,6 +204,25 @@ class WorkspaceToolRuntime(
                 "ava.fs.delete" -> workspace.delete(a.getString("path"), confirmed)
                 "ava.fs.zip" -> workspace.zip(a.getString("source"), a.getString("destination"))
                 "ava.fs.unzip" -> workspace.unzip(a.getString("archive"), a.getString("destination"))
+                "ava.fs.replace_many" -> {
+                    val paths = a.getJSONArray("paths").let { array -> (0 until array.length()).map { array.getString(it) } }
+                    "Replaced " + paths.sumOf { path -> runCatching { StructuredTextTools.replaceCount(workspace, path, a.getString("old_text"), a.getString("new_text")) }.getOrDefault(0) } + " occurrence(s)."
+                }
+                "ava.fs.count" -> StructuredTextTools.count(workspace.readText(a.getString("path")))
+                "ava.fs.compare" -> StructuredTextTools.compare(workspace, a.getString("first"), a.getString("second"))
+                "ava.csv.read" -> StructuredTextTools.csvRead(workspace, a.getString("path"))
+                "ava.csv.filter" -> StructuredTextTools.csvFilter(workspace, a.getString("path"), a.getString("column"), a.getString("value"))
+                "ava.csv.sort" -> StructuredTextTools.csvSort(workspace, a.getString("path"), a.getString("column"), a.optBoolean("descending"))
+                "ava.csv.stats" -> StructuredTextTools.csvStats(workspace, a.getString("path"), a.getString("column"))
+                "ava.csv.add" -> StructuredTextTools.csvAddRow(workspace, a.getString("path"), a.getJSONArray("values"))
+                "ava.csv.edit" -> StructuredTextTools.csvEditCell(workspace, a.getString("path"), a.getInt("row"), a.getString("column"), a.getString("value"))
+                "ava.json.validate" -> StructuredTextTools.jsonValidate(workspace, a.getString("path"))
+                "ava.json.format" -> StructuredTextTools.jsonFormat(workspace, a.getString("path"))
+                "ava.json.get" -> StructuredTextTools.jsonGet(workspace, a.getString("path"), a.getString("pointer"))
+                "ava.json.set" -> StructuredTextTools.jsonSet(workspace, a.getString("path"), a.getString("pointer"), a.getString("value"))
+                "ava.convert.csv_json" -> StructuredTextTools.csvToJson(workspace, a.getString("path"), a.getString("destination"))
+                "ava.convert.json_csv" -> StructuredTextTools.jsonToCsv(workspace, a.getString("path"), a.getString("destination"))
+                "ava.convert.md_html" -> StructuredTextTools.markdownToHtml(workspace, a.getString("path"), a.getString("destination"))
                 else -> requireNotNull(dailyTools) { "Daily tools are unavailable." }.execute(execution.uid, a, confirmed)
             }
             ToolResult(execution.uid, true, result)
