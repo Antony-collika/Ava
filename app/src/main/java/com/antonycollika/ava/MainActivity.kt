@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.antonycollika.ava.data.AttachmentStore
+import com.antonycollika.ava.data.WorkspaceStore
 import com.antonycollika.ava.data.ConversationStore
 import com.antonycollika.ava.data.ProviderClient
 import com.antonycollika.ava.data.ProviderSettingsStore
@@ -19,6 +20,7 @@ class MainActivity : ComponentActivity() {
         val conversationStore = ConversationStore(applicationContext)
         val keyStore = SecureKeyStore(applicationContext)
         val attachmentStore = AttachmentStore(applicationContext)
+        val workspaceStore = WorkspaceStore(applicationContext)
 
         setContent {
             AvaApp(
@@ -26,6 +28,7 @@ class MainActivity : ComponentActivity() {
                 conversationStore = conversationStore,
                 keyStore = keyStore,
                 attachmentStore = attachmentStore,
+                workspaceStore = workspaceStore,
                 providerClient = ProviderClient(attachmentStore)
             )
         }
