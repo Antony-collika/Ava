@@ -565,7 +565,7 @@ fun AvaApp(
                 confirmButton = { TextButton(onClick = { pendingToolDecision?.complete(true); pendingToolDecision = null; pendingToolExecution = null }) { Text("Allow") } },
                 dismissButton = { TextButton(onClick = { pendingToolDecision?.complete(false); pendingToolDecision = null; pendingToolExecution = null }) { Text("Deny") } })
         }
-        if (showTools) ToolSettingsSheet(toolRegistryStore, onDismiss = { showTools = false })
+        if (showTools) ToolSettingsSheet(toolRegistryStore, keyStore, onDismiss = { showTools = false })
         if (pendingRegenerationIndex != null) {
             AlertDialog(
                 onDismissRequest = { pendingRegenerationIndex = null },
@@ -675,7 +675,9 @@ fun AvaApp(
 
 
 @Composable
-private fun ToolSettingsSheet(store: ToolRegistryStore, onDismiss: () -> Unit) {
+private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore, onDismiss: () -> Unit) {
+    var webSearchKey by remember { mutableStateOf(keyStore.read("WEB_SEARCH").orEmpty()) }
+    var keySaved by remember { mutableStateOf(false) }
     var controls by remember { mutableStateOf(store.all()) }
     var editingUid by remember { mutableStateOf<String?>(null) }
     var editingName by remember { mutableStateOf("") }
@@ -684,6 +686,16 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
             Text("Tool controls", style = MaterialTheme.typography.titleLarge)
+            Text("Web search · Brave Search API", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(value = webSearchKey, onValueChange = { webSearchKey = it; keySaved = false },
+                label = { Text("Brave Search API key") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { if (webSearchKey.isNotBlank()) { keyStore.save(webSearchKey, "WEB_SEARCH"); keySaved = true } },
+                    enabled = webSearchKey.isNotBlank()) { Text("Save search key") }
+                TextButton(onClick = { keyStore.clear("WEB_SEARCH"); webSearchKey = ""; keySaved = false }) { Text("Remove") }
+                if (keySaved) Text("Saved", color = MaterialTheme.colorScheme.primary)
+            }
             Text("UIDs and original descriptions are fixed. The model sees only enabled tools and their customized names/descriptions.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             controls.forEach { control ->
