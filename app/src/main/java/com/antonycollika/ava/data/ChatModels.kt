@@ -24,7 +24,8 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val edited: Boolean = false
+    val edited: Boolean = false,
+    val attachments: List<MessageAttachment> = emptyList()
 )
 
 data class Conversation(
@@ -39,7 +40,14 @@ object ChatJson {
         messages.forEach { message ->
             put(JSONObject().put("id", message.id).put("role", message.role)
                 .put("content", message.content).put("createdAt", message.createdAt)
-                .put("edited", message.edited))
+                 .put("edited", message.edited)
+                .put("attachments", JSONArray().apply {
+                    message.attachments.forEach { attachment ->
+                        put(JSONObject().put("id", attachment.id)
+                            .put("mimeType", attachment.mimeType)
+                            .put("fileName", attachment.fileName))
+                    }
+                }))
         }
     }.toString()
 
@@ -53,7 +61,19 @@ object ChatJson {
                     role = item.optString("role", "user"),
                     content = item.optString("content"),
                     createdAt = item.optLong("createdAt", 0L),
-                    edited = item.optBoolean("edited", false)
+                    edited = item.optBoolean("edited", false),
+                    attachments = item.optJSONArray("attachments")?.let { array ->
+                        buildList {
+                            for (attachmentIndex in 0 until array.length()) {
+                                val attachment = array.optJSONObject(attachmentIndex) ?: continue
+                                val id = attachment.optString("id")
+                                val mime = attachment.optString("mimeType")
+                                if (id.isNotBlank() && mime in AttachmentStore.SUPPORTED_TYPES) {
+                                    add(MessageAttachment(id, mime, attachment.optString("fileName", "image")))
+                                }
+                            }
+                        }
+                    }.orEmpty()
                 ))
             }
         }
