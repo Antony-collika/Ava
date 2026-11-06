@@ -1,5 +1,13 @@
 package com.antonycollika.ava.ui
 
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -46,6 +54,7 @@ fun AvaApp(
     settingsStore: ProviderSettingsStore,
     conversationStore: ConversationStore,
     keyStore: SecureKeyStore,
+    attachmentStore: AttachmentStore,
     providerClient: ProviderClient
 ) {
     var settings by remember { mutableStateOf(settingsStore.load()) }
@@ -57,6 +66,18 @@ fun AvaApp(
     var showSettings by remember { mutableStateOf(!keyStore.hasKey(settings.provider.name)) }
     var showHistory by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
+    var pendingAttachments by remember { mutableStateOf<List<MessageAttachment>>(emptyList()) }
+    val context = LocalContext.current
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
+        val imported = uris.mapNotNull { uri -> runCatching { attachmentStore.importUri(context.contentResolver, uri) }
+            .onFailure { errorMessage = it.message ?: "Unable to attach this image." }.getOrNull() }
+        pendingAttachments = (pendingAttachments + imported).take(4)
+    }
+    val cameraPicker = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) runCatching { attachmentStore.importBitmap(bitmap) }
+            .onSuccess { pendingAttachments = (pendingAttachments + it).take(4) }
+            .onFailure { errorMessage = it.message ?: "Unable to save camera image." }
+    }
     var sending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var generationJob by remember { mutableStateOf<Job?>(null) }
@@ -272,26 +293,36 @@ fun AvaApp(
                 },
                 bottomBar = {
                     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-                        Row(
-                            Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            OutlinedTextField(
-                                value = draft,
-                                onValueChange = { draft = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text("Message Ava…") },
-                                maxLines = 6,
-                                shape = RoundedCornerShape(24.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            FilledIconButton(
-                                onClick = {
-                                    if (sending) {
-                                        cancelGeneration()
-                                    } else {
+                        Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
+                            if (pendingAttachments.isNotEmpty()) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    pendingAttachments.forEach { attachment ->
+                                        val bitmap = remember(attachment.id) {
+                                            attachmentStore.file(attachment)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+                                        }
+                                        Box(Modifier.size(68.dp)) {
+                                            bitmap?.let { Image(it, attachment.fileName, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                                            IconButton(onClick = { pendingAttachments = pendingAttachments.filterNot { it.id == attachment.id } },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)) { Text("×") }
+                                        }
+                                    }
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.Bottom) {
+                                IconButton(onClick = { galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                    enabled = !sending && pendingAttachments.size < 4) { Text("＋") }
+                                IconButton(onClick = { cameraPicker.launch(null) },
+                                    enabled = !sending && pendingAttachments.size < 4) { Text("◉") }
+                                OutlinedTextField(value = draft, onValueChange = { draft = it },
+                                    modifier = Modifier.weight(1f), placeholder = { Text("Message Ava…") },
+                                    maxLines = 6, shape = RoundedCornerShape(24.dp))
+                                Spacer(Modifier.width(8.dp))
+                                FilledIconButton(onClick = {
+                                    if (sending) cancelGeneration() else {
                                         val prompt = draft.trim()
-                                        if (prompt.isNotEmpty()) {
+                                        if (prompt.isNotEmpty() || pendingAttachments.isNotEmpty()) {
                                             if (keyStore.read(settings.provider.name).isNullOrBlank()) {
                                                 errorMessage = "Add your API key in Settings to start chatting."
                                                 showSettings = true
@@ -299,19 +330,18 @@ fun AvaApp(
                                             }
                                             draft = ""
                                             errorMessage = null
-                                            messages.add(ChatMessage(UUID.randomUUID().toString(), "user", prompt))
+                                            messages.add(ChatMessage(UUID.randomUUID().toString(), "user", prompt,
+                                                attachments = pendingAttachments.toList()))
+                                            pendingAttachments = emptyList()
                                             messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
                                             startStreaming(messages.dropLast(1).toList())
                                         }
                                     }
-                                },
-                                enabled = sending || draft.isNotBlank(),
-                                modifier = Modifier.size(52.dp)
-                            ) {
-                                Icon(
-                                    if (sending) Icons.Default.Stop else Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = if (sending) "Stop response" else "Send message"
-                                )
+                                }, enabled = sending || draft.isNotBlank() || pendingAttachments.isNotEmpty(),
+                                    modifier = Modifier.size(52.dp)) {
+                                    Icon(if (sending) Icons.Default.Stop else Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = if (sending) "Stop response" else "Send message")
+                                }
                             }
                         }
                     }
@@ -357,6 +387,7 @@ fun AvaApp(
                                 val messageIndex = messages.indexOfFirst { it.id == message.id }
                                 MessageBubble(
                                     message = message,
+                                    attachmentStore = attachmentStore,
                                     enabled = !sending,
                                     editing = editingMessageId == message.id,
                                     editText = editingText,
@@ -536,6 +567,7 @@ private enum class MessageAction { EDIT, EDIT_AND_REGENERATE, REGENERATE, BRANCH
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    attachmentStore: AttachmentStore,
     enabled: Boolean,
     editing: Boolean,
     editText: String,
@@ -572,10 +604,18 @@ private fun MessageBubble(
                 shape = RoundedCornerShape(if (isUser) 22.dp else 8.dp),
                 modifier = Modifier.widthIn(max = 680.dp)
             ) {
-                SelectionContainer {
-                    Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
-                        modifier = Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp),
-                        style = MaterialTheme.typography.bodyLarge, lineHeight = MaterialTheme.typography.bodyLarge.lineHeight)
+                Column(Modifier.padding(horizontal = if (isUser) 16.dp else 4.dp, vertical = 12.dp)) {
+                    message.attachments.forEach { attachment ->
+                        val bitmap = remember(attachment.id) {
+                            attachmentStore.file(attachment)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+                        }
+                        bitmap?.let { Image(it, attachment.fileName,
+                            Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
+                    }
+                    SelectionContainer {
+                        Text(text = remember(message.content) { renderBasicMarkdown(message.content.ifBlank { " " }) },
+                            style = MaterialTheme.typography.bodyLarge, lineHeight = MaterialTheme.typography.bodyLarge.lineHeight)
+                    }
                 }
             }
             Box {
