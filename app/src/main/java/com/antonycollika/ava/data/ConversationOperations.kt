@@ -52,6 +52,7 @@ object ConversationOperations {
             "gpt-4o" in id -> 128_000
             "deepseek" in id -> 64_000
             "mistral" in id -> 128_000
+            "llama-3.3-70b-versatile" in id -> 131_072
             "llama" in id -> 32_000
             else -> 32_000
         }
