@@ -466,7 +466,8 @@ private fun ProviderSettingsScreen(
             Spacer(Modifier.weight(1f))
             Button(
                 onClick = { onSave(ProviderSettings(provider, model.trim(), baseUrl.trim(), systemPrompt), apiKey) },
-                enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&\n                    android.net.Uri.parse(baseUrl.trim()).host != null &&
+                enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&
+                    android.net.Uri.parse(baseUrl.trim()).host != null &&
                     (apiKey.isNotBlank() || currentHasKey),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save and start chatting") }
