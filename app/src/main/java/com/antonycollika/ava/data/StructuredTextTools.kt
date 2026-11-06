@@ -37,9 +37,9 @@ object StructuredTextTools {
         val rows = csv(store.readText(path))
         if (rows.isEmpty()) return "(empty CSV)"
         val width = rows.maxOf { it.size }
-        val header = rows.first().padEnd(width)
+        val header = rows.first() + List(width - rows.first().size) { "" }
         val separator = List(width) { "---" }
-        return (listOf(header, separator) + rows.drop(1).map { it.padEnd(width) })
+        return (listOf(header, separator) + rows.drop(1).map { it + List(width - it.size) { "" } })
             .joinToString("\n") { "| " + it.joinToString(" | ") + " |" }
     }
     fun csvFilter(store: WorkspaceStore, path: String, column: String, value: String): String {
