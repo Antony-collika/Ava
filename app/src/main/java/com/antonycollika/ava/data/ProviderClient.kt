@@ -115,8 +115,15 @@ class ProviderClient {
         return builder.post(body.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
     }
 
-    private fun endpoint(base: String, path: String): String =
-        if (base.endsWith("/v1") || base.contains("/v1beta")) "$base/$path" else "$base/v1/$path"
+    private fun endpoint(base: String, path: String): String {
+        val normalized = base.trimEnd('/')
+        if (normalized.endsWith("/$path")) return normalized
+        return if (normalized.endsWith("/v1") || normalized.endsWith("/v1beta")) {
+            "$normalized/$path"
+        } else {
+            "$normalized/v1/$path"
+        }
+    }
 
     private suspend fun readOpenAi(source: BufferedSource, emit: (String) -> Unit) {
         while (!source.exhausted()) {
