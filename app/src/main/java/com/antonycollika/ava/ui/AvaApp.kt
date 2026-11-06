@@ -2,6 +2,8 @@ package com.antonycollika.ava.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -251,7 +253,7 @@ fun AvaApp(
                     } else {
                         val listState = rememberLazyListState()
                         LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
-                            if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+                            if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
                         }
                         LazyColumn(
                             state = listState,
@@ -399,7 +401,9 @@ private fun ProviderSettingsScreen(
         }
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxSize().padding(padding).imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("Connect your AI provider", style = MaterialTheme.typography.headlineSmall)
@@ -470,7 +474,6 @@ private fun ProviderSettingsScreen(
                 Text(it, color = if (it == "Connection successful.") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.weight(1f))
             Button(
                 onClick = { onSave(ProviderSettings(provider, model.trim(), baseUrl.trim(), systemPrompt), apiKey) },
                 enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&
