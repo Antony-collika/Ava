@@ -2,6 +2,8 @@ package com.antonycollika.ava.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class ToolLoopRunner(private val providerClient: ProviderClient) {
@@ -84,9 +86,10 @@ class ToolLoopRunner(private val providerClient: ProviderClient) {
                 onToolStatus(execution.confirmationSummary)
                 val approved = if (execution.requiresConfirmation) confirm(execution) else true
                 val result = if (!approved) ToolResult(control.uid, false, "User declined this operation.")
-                    else runtime.execute(execution, confirmed = approved)
+                    else withContext(Dispatchers.IO) { runtime.execute(execution, confirmed = approved) }
                 val toolMessage = ChatMessage(UUID.randomUUID().toString(), "tool",
-                    result.output, toolCallId = call.id, toolUid = control.uid)
+                    (if (result.success) "Completed: " else "Failed: ") + result.output,
+                    toolCallId = call.id, toolUid = control.uid)
                 transcript += toolMessage
                 onToolResult(toolMessage)
             }
