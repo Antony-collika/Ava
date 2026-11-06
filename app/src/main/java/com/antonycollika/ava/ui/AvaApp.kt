@@ -92,6 +92,7 @@ fun AvaApp(
         if (showSettings) {
             ProviderSettingsScreen(
                 initial = settings,
+                loadProviderSettings = { selected -> settingsStore.load(selected) },
                 hasSavedKey = { selected -> keyStore.hasKey(selected.name) },
                 onBack = { showSettings = false },
                 onRemoveKey = { selected -> keyStore.clear(selected.name) },
@@ -370,6 +371,7 @@ private fun renderBasicMarkdown(source: String) = buildAnnotatedString {
 @Composable
 private fun ProviderSettingsScreen(
     initial: ProviderSettings,
+    loadProviderSettings: (ProviderType) -> ProviderSettings,
     hasSavedKey: (ProviderType) -> Boolean,
     onBack: () -> Unit,
     onRemoveKey: (ProviderType) -> Unit,
@@ -411,9 +413,14 @@ private fun ProviderSettingsScreen(
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     ProviderType.entries.forEach { option ->
                         DropdownMenuItem(text = { Text(option.label) }, onClick = {
-                            provider = option
-                            model = option.defaultModel
-                            baseUrl = option.defaultBaseUrl
+                            val selected = loadProviderSettings(option)
+                            provider = selected.provider
+                            model = selected.model
+                            baseUrl = selected.baseUrl
+                            systemPrompt = selected.systemPrompt
+                            apiKey = ""
+                            keyRemoved = false
+                            testMessage = null
                             expanded = false
                         })
                     }
