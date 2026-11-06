@@ -143,7 +143,7 @@ class ToolRegistryStore(context: Context) {
 
     fun control(uid: String): ToolControl? = all().firstOrNull { it.uid == uid }
 
-    companion object
+    companion object { }
 }
 
 data class ToolExecution(
