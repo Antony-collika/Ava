@@ -16,7 +16,7 @@ class WorkspaceStore(private val context: Context) {
     fun selectedUri(): Uri? = prefs.getString("tree_uri", null)?.let(Uri::parse)
     fun hasAccess(): Boolean {
         val uri = selectedUri() ?: return false
-        return context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadWritePermission }
+        return context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
     }
     fun selectWorkspace(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri,
