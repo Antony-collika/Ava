@@ -691,34 +691,72 @@ private fun excerptAround(text: String, query: String): String {
 
 private fun renderBasicMarkdown(source: String, highlightQuery: String = "") = buildAnnotatedString {
     val tick = 96.toChar().toString()
-    val inlinePattern = Regex("(\\*\\*.+?\\*\\*|" + tick + "[^" + tick + "]+" + tick + ")")
+    val inlinePattern = Regex("(\\*\\*.+?\\*\\*|__.+?__|~~.+?~~|\\*[^*]+\\*|_[^_]+_|" + tick + "[^" + tick + "]+" + tick + "|!?\\[[^]]+\\]\\([^ )]+\\))")
+    var inCodeBlock = false
     val lines = source.lines()
-    lines.forEachIndexed { lineIndex, line ->
-        val headingLevel = line.takeWhile { it == '#' }.length.coerceAtMost(3)
-        val content = if (headingLevel > 0) line.drop(headingLevel).trimStart() else line
-        if (headingLevel > 0) {
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = (22 - headingLevel * 2).sp)) {
-                append(content)
-            }
+    lines.forEachIndexed { lineIndex, original ->
+        val line = original.trimEnd()
+        if (line.trimStart().startsWith(tick.repeat(3))) {
+            inCodeBlock = !inCodeBlock
+        } else if (inCodeBlock) {
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33292932))) { append(line) }
         } else {
-            var cursor = 0
-            inlinePattern.findAll(content).forEach { match ->
-                append(content.substring(cursor, match.range.first))
-                val token = match.value
-                if (token.startsWith("**")) {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(token.removePrefix("**").removeSuffix("**"))
-                    }
-                } else {
-                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFF292832))) {
-                        append(" " + token.removePrefix(tick).removeSuffix(tick) + " ")
-                    }
-                }
-                cursor = match.range.last + 1
+            val heading = Regex("^#{1,6}\\s+").find(line)
+            val quote = line.trimStart().startsWith(">")
+            val unordered = Regex("^\\s*[-*+]\\s+").find(line)
+            val ordered = Regex("^\\s*\\d+[.)]\\s+").find(line)
+            val content = when {
+                heading != null -> line.removeRange(heading.range)
+                quote -> line.trimStart().removePrefix(">").trimStart()
+                unordered != null -> "• " + line.removeRange(unordered.range)
+                ordered != null -> line.substring(ordered.range.first, ordered.range.last + 1).trim() + " " + line.removeRange(ordered.range)
+                else -> line
             }
-            append(content.substring(cursor))
+            val blockStyle = when {
+                heading != null -> SpanStyle(fontWeight = FontWeight.Bold, fontSize = (24 - heading.value.trim().length).coerceAtLeast(14).sp)
+                quote -> SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = Color.Gray)
+                else -> SpanStyle()
+            }
+            withStyle(blockStyle) {
+                var cursor = 0
+                inlinePattern.findAll(content).forEach { match ->
+                    appendHighlighted(content.substring(cursor, match.range.first), highlightQuery)
+                    val token = match.value
+                    when {
+                        token.startsWith(tick) -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33292932))) {
+                            append(token.removePrefix(tick).removeSuffix(tick))
+                        }
+                        token.startsWith("**") || token.startsWith("__") ->
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.substring(2, token.length - 2)) }
+                        token.startsWith("~~") ->
+                            withStyle(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)) { append(token.substring(2, token.length - 2)) }
+                        token.startsWith("*") || token.startsWith("_") ->
+                            withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) { append(token.substring(1, token.length - 1)) }
+                        token.startsWith("[") || token.startsWith("![") -> {
+                            val label = token.substringAfter("[").substringBefore("]")
+                            withStyle(SpanStyle(color = Color(0xFF8AB4F8), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)) { append(label) }
+                        }
+                    }
+                    cursor = match.range.last + 1
+                }
+                appendHighlighted(content.substring(cursor), highlightQuery)
+            }
         }
         if (lineIndex < lines.lastIndex) append('\n')
+    }
+}
+
+private fun androidx.compose.ui.text.AnnotatedString.Builder.appendHighlighted(text: String, query: String) {
+    if (query.isBlank()) { append(text); return }
+    var cursor = 0
+    while (cursor < text.length) {
+        val match = text.indexOf(query, cursor, ignoreCase = true)
+        if (match < 0) { append(text.substring(cursor)); break }
+        append(text.substring(cursor, match))
+        withStyle(SpanStyle(background = Color(0xFFFFD54F), color = Color.Black, fontWeight = FontWeight.Bold)) {
+            append(text.substring(match, match + query.length))
+        }
+        cursor = match + query.length
     }
 }
 
