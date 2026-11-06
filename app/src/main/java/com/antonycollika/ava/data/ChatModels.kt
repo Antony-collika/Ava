@@ -19,13 +19,18 @@ enum class ProviderType(val label: String, val defaultModel: String, val default
     }
 }
 
+data class ChatToolCall(val id: String, val uid: String, val modelName: String, val arguments: String)
+
 data class ChatMessage(
     val id: String,
     val role: String,
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
     val edited: Boolean = false,
-    val attachments: List<MessageAttachment> = emptyList()
+    val attachments: List<MessageAttachment> = emptyList(),
+    val toolCalls: List<ChatToolCall> = emptyList(),
+    val toolCallId: String? = null,
+    val toolUid: String? = null
 )
 
 data class Conversation(
@@ -41,6 +46,12 @@ object ChatJson {
             put(JSONObject().put("id", message.id).put("role", message.role)
                 .put("content", message.content).put("createdAt", message.createdAt)
                  .put("edited", message.edited)
+                .put("toolCalls", JSONArray().apply {
+                    message.toolCalls.forEach { call -> put(JSONObject().put("id", call.id).put("uid", call.uid)
+                        .put("modelName", call.modelName).put("arguments", call.arguments)) }
+                })
+                .put("toolCallId", message.toolCallId)
+                .put("toolUid", message.toolUid)
                 .put("attachments", JSONArray().apply {
                     message.attachments.forEach { attachment ->
                         put(JSONObject().put("id", attachment.id)
@@ -62,6 +73,16 @@ object ChatJson {
                     content = item.optString("content"),
                     createdAt = item.optLong("createdAt", 0L),
                     edited = item.optBoolean("edited", false),
+                    toolCalls = item.optJSONArray("toolCalls")?.let { calls -> buildList {
+                        for (callIndex in 0 until calls.length()) {
+                            val call = calls.optJSONObject(callIndex) ?: continue
+                            val id = call.optString("id"); val uid = call.optString("uid")
+                            if (id.isNotBlank() && uid.isNotBlank()) add(ChatToolCall(id, uid,
+                                call.optString("modelName"), call.optString("arguments", "{}")))
+                        }
+                    } }.orEmpty(),
+                    toolCallId = item.optString("toolCallId").takeIf { it.isNotBlank() && it != "null" },
+                    toolUid = item.optString("toolUid").takeIf { it.isNotBlank() && it != "null" },
                     attachments = item.optJSONArray("attachments")?.let { array ->
                         buildList {
                             for (attachmentIndex in 0 until array.length()) {
