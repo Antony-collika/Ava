@@ -132,6 +132,11 @@ class WorkspaceStore(private val context: Context) {
         return hits
     }
     fun copy(source: String, destination: String): String {
+        require(source.isNotBlank()) { "Cannot copy the workspace root." }
+        val sourceParts = parts(source); val destinationParts = parts(destination)
+        require(destinationParts.size <= sourceParts.size || destinationParts.take(sourceParts.size) != sourceParts) {
+            "Cannot copy a folder into itself or one of its descendants."
+        }
         val from = resolve(source) ?: error("Source not found.")
         val (p, name) = parent(destination); require(p.findFile(name) == null)
         copyNode(from, p, name); return "Copied " + source + " to " + destination
@@ -159,6 +164,11 @@ class WorkspaceStore(private val context: Context) {
         }
     }
     fun zip(source: String, destination: String): String {
+        require(source.isNotBlank()) { "Cannot archive the workspace root." }
+        val sourceParts = parts(source); val destinationParts = parts(destination)
+        require(destinationParts.size <= sourceParts.size || destinationParts.take(sourceParts.size) != sourceParts) {
+            "Cannot create an archive inside the folder being archived."
+        }
         val from = resolve(source) ?: error("Source not found."); val (p, name) = parent(destination)
         require(p.findFile(name) == null); val out = requireNotNull(p.createFile("application/zip", name))
         context.contentResolver.openOutputStream(out.uri, "wt")?.use { raw -> ZipOutputStream(raw).use { zip ->
