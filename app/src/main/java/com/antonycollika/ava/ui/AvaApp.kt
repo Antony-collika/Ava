@@ -877,7 +877,7 @@ private fun renderBasicMarkdown(source: String, highlightQuery: String = "") = b
         if (line.trimStart().startsWith(tick.repeat(3))) {
             inCodeBlock = !inCodeBlock
         } else if (inCodeBlock) {
-            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33292932))) { append(line) }
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33292932))) { appendHighlighted(line, highlightQuery) }
         } else {
             val heading = Regex("^#{1,6}\\s+").find(line)
             val quote = line.trimStart().startsWith(">")
@@ -902,17 +902,17 @@ private fun renderBasicMarkdown(source: String, highlightQuery: String = "") = b
                     val token = match.value
                     when {
                         token.startsWith(tick) -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33292932))) {
-                            append(token.removePrefix(tick).removeSuffix(tick))
+                            appendHighlighted(token.removePrefix(tick).removeSuffix(tick), highlightQuery)
                         }
                         token.startsWith("**") || token.startsWith("__") ->
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.substring(2, token.length - 2)) }
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendHighlighted(token.substring(2, token.length - 2), highlightQuery) }
                         token.startsWith("~~") ->
-                            withStyle(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)) { append(token.substring(2, token.length - 2)) }
+                            withStyle(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)) { appendHighlighted(token.substring(2, token.length - 2), highlightQuery) }
                         token.startsWith("*") || token.startsWith("_") ->
-                            withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) { append(token.substring(1, token.length - 1)) }
+                            withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) { appendHighlighted(token.substring(1, token.length - 1), highlightQuery) }
                         token.startsWith("[") || token.startsWith("![") -> {
                             val label = token.substringAfter("[").substringBefore("]")
-                            withStyle(SpanStyle(color = Color(0xFF8AB4F8), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)) { append(label) }
+                            withStyle(SpanStyle(color = Color(0xFF8AB4F8), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)) { appendHighlighted(label, highlightQuery) }
                         }
                     }
                     cursor = match.range.last + 1
