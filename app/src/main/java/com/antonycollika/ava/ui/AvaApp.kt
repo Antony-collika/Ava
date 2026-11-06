@@ -565,7 +565,7 @@ fun AvaApp(
                 confirmButton = { TextButton(onClick = { pendingToolDecision?.complete(true); pendingToolDecision = null; pendingToolExecution = null }) { Text("Allow") } },
                 dismissButton = { TextButton(onClick = { pendingToolDecision?.complete(false); pendingToolDecision = null; pendingToolExecution = null }) { Text("Deny") } })
         }
-        if (showTools) ToolSettingsSheet(toolRegistryStore, keyStore, onDismiss = { showTools = false })
+        if (showTools) ToolSettingsSheet(toolRegistryStore, keyStore, settings.provider, onDismiss = { showTools = false })
         if (pendingRegenerationIndex != null) {
             AlertDialog(
                 onDismissRequest = { pendingRegenerationIndex = null },
@@ -675,7 +675,7 @@ fun AvaApp(
 
 
 @Composable
-private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore, onDismiss: () -> Unit) {
+private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore, provider: ProviderType, onDismiss: () -> Unit) {
     var webSearchKey by remember { mutableStateOf(keyStore.read("WEB_SEARCH").orEmpty()) }
     var keySaved by remember { mutableStateOf(false) }
     var controls by remember { mutableStateOf(store.all()) }
@@ -709,7 +709,7 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore
                     }
                     Switch(checked = control.enabled, onCheckedChange = { enabled ->
                         val updated = control.copy(enabled = enabled)
-                        store.update(updated); controls = store.all()
+                        store.update(updated, provider); controls = store.all()
                     })
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -746,7 +746,7 @@ private fun ToolSettingsSheet(store: ToolRegistryStore, keyStore: SecureKeyStore
                     val uid = editingUid ?: return@TextButton
                     val current = controls.first { it.uid == uid }
                     val updated = current.copy(modelName = editingName.trim(), modelDescription = editingDescription.trim())
-                    validationError = store.update(updated)
+                    validationError = store.update(updated, provider)
                     if (validationError == null) { controls = store.all(); editingUid = null }
                 }) { Text("Save") }
             },
