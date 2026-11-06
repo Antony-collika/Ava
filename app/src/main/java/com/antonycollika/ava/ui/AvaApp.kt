@@ -58,6 +58,7 @@ fun AvaApp(
     var sending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var generationJob by remember { mutableStateOf<Job?>(null) }
+    var activeRunId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun persist() {
@@ -74,6 +75,7 @@ fun AvaApp(
     }
 
     fun startNewChat() {
+        activeRunId = null
         generationJob?.cancel()
         sending = false
         messages.clear()
@@ -165,6 +167,7 @@ fun AvaApp(
                             FilledIconButton(
                                 onClick = {
                                     if (sending) {
+                                        activeRunId = null
                                         generationJob?.cancel()
                                         sending = false
                                     } else {
@@ -186,27 +189,36 @@ fun AvaApp(
                                                 messages.add(ChatMessage(UUID.randomUUID().toString(), "assistant", ""))
                                                 sending = true
                                                 persist()
+                                                val runId = UUID.randomUUID().toString()
+                                                activeRunId = runId
                                                 generationJob = scope.launch {
                                                     val answer = StringBuilder()
                                                     try {
                                                         providerClient.stream(settings, key, requestHistory).collect { chunk ->
-                                                            answer.append(chunk)
-                                                            if (messages.isNotEmpty()) {
-                                                                messages[messages.lastIndex] = messages.last().copy(content = answer.toString())
-                                                                persist()
+                                                            if (activeRunId == runId) {
+                                                                answer.append(chunk)
+                                                                if (messages.isNotEmpty()) {
+                                                                    messages[messages.lastIndex] = messages.last().copy(content = answer.toString())
+                                                                    persist()
+                                                                }
                                                             }
                                                         }
-                                                        if (answer.isEmpty()) errorMessage = "The provider returned no text. Check the selected model and provider settings."
+                                                        if (activeRunId == runId && answer.isEmpty()) {
+                                                            errorMessage = "The provider returned no text. Check the selected model and provider settings."
+                                                        }
                                                     } catch (failure: Throwable) {
-                                                        if (failure !is kotlinx.coroutines.CancellationException) {
+                                                        if (activeRunId == runId && failure !is kotlinx.coroutines.CancellationException) {
                                                             errorMessage = failure.message ?: "Unable to reach the provider."
                                                             if (messages.lastOrNull()?.role == "assistant" && messages.last().content.isBlank()) {
                                                                 messages.removeAt(messages.lastIndex)
                                                             }
                                                         }
                                                     } finally {
-                                                        sending = false
-                                                        persist()
+                                                        if (activeRunId == runId) {
+                                                            activeRunId = null
+                                                            sending = false
+                                                            persist()
+                                                        }
                                                     }
                                                 }
                                             }
@@ -288,7 +300,9 @@ fun AvaApp(
                     } else {
                         conversations.forEach { conversation ->
                             Row(Modifier.fillMaxWidth().clickable {
+                                activeRunId = null
                                 generationJob?.cancel()
+                                sending = false
                                 activeId = conversation.id
                                 messages.clear()
                                 messages.addAll(conversation.messages)
