@@ -12,6 +12,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.URI
 import java.time.LocalDate
@@ -119,9 +120,17 @@ class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
                 if (!response.isSuccessful) error("Web request failed: HTTP " + response.code)
                 val body = response.body ?: error("Webpage returned an empty response.")
                 require(body.contentLength() <= MAX_WEB_BYTES || body.contentLength() == -1L) { "Webpage is too large." }
-                val bytes = body.source().readByteArray(MAX_WEB_BYTES + 1L)
-                require(bytes.size <= MAX_WEB_BYTES) { "Webpage is too large." }
-                val html = bytes.toString(Charsets.UTF_8)
+                val buffer = ByteArrayOutputStream()
+                body.byteStream().use { input ->
+                    val chunk = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(chunk)
+                        if (count < 0) break
+                        require(buffer.size() + count <= MAX_WEB_BYTES) { "Webpage is too large." }
+                        buffer.write(chunk, 0, count)
+                    }
+                }
+                val html = buffer.toByteArray().toString(Charsets.UTF_8)
                 return html.replace(Regex("(?is)<(script|style|noscript)[^>]*>.*?</\\1>"), " ")
                     .replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>"), "\n")
                     .replace(Regex("<[^>]+>"), " ")
@@ -165,7 +174,10 @@ class DailyToolRuntime(context: Context, private val secrets: SecureKeyStore) {
         }
     }
 
-    companion object { private const val MAX_WEB_BYTES = 2 * 1024 * 1024 }
+    companion object {
+        private const val MAX_WEB_BYTES = 2 * 1024 * 1024
+        private const val MAX_REDIRECTS = 3
+    }
 }
 
 /** Small arithmetic parser; it never evaluates arbitrary Kotlin or JavaScript. */
