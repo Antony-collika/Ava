@@ -7,7 +7,11 @@ enum class ProviderType(val label: String, val defaultModel: String, val default
     OPENAI("OpenAI", "gpt-4o-mini", "https://api.openai.com/v1"),
     ANTHROPIC("Anthropic", "claude-sonnet-4-5", "https://api.anthropic.com/v1"),
     GEMINI("Google Gemini", "gemini-2.5-flash", "https://generativelanguage.googleapis.com/v1beta"),
-    OPENAI_COMPATIBLE("OpenAI-compatible", "", "https://");
+    OPENROUTER("OpenRouter", "openai/gpt-4o-mini", "https://openrouter.ai/api/v1"),
+    DEEPSEEK("DeepSeek", "deepseek-chat", "https://api.deepseek.com/v1"),
+    GROQ("Groq", "llama-3.3-70b-versatile", "https://api.groq.com/openai/v1"),
+    MISTRAL("Mistral", "mistral-small-latest", "https://api.mistral.ai/v1"),
+    OPENAI_COMPATIBLE("Custom OpenAI-compatible", "", "https://");
 
     companion object {
         fun fromName(value: String?): ProviderType =
