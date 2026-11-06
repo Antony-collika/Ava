@@ -327,7 +327,8 @@ private fun ProviderSettingsScreen(
     var apiKey by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
     var showKey by remember { mutableStateOf(false) }
-    val currentHasKey = hasSavedKey(provider)
+    var keyRemoved by remember(provider) { mutableStateOf(false) }
+    val currentHasKey = hasSavedKey(provider) && !keyRemoved
     Scaffold(
         topBar = {
             TopAppBar(
@@ -381,12 +382,12 @@ private fun ProviderSettingsScreen(
                 minLines = 2, maxLines = 4
             )
             if (currentHasKey) {
-                TextButton(onClick = { onRemoveKey(provider) }) { Text("Remove saved API key") }
+                TextButton(onClick = { onRemoveKey(provider); keyRemoved = true }) { Text("Remove saved API key") }
             }
             Spacer(Modifier.weight(1f))
             Button(
                 onClick = { onSave(ProviderSettings(provider, model.trim(), baseUrl.trim(), systemPrompt), apiKey) },
-                enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&
+                enabled = model.isNotBlank() && baseUrl.trim().startsWith("https://") &&\n                    android.net.Uri.parse(baseUrl.trim()).host != null &&
                     (apiKey.isNotBlank() || currentHasKey),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save and start chatting") }
