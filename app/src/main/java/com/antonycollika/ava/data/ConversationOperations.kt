@@ -16,8 +16,7 @@ object ConversationOperations {
         }
         return RegenerationPlan(
             userMessageIndex = userIndex,
-            hasFollowingMessages = userIndex < messages.lastIndex - 1 ||
-                (userIndex < messages.lastIndex && messages[userIndex + 1].role != "assistant")
+            hasFollowingMessages = messages.drop(userIndex + 1).any { it.role == "user" }
         )
     }
 
@@ -28,12 +27,10 @@ object ConversationOperations {
 
     fun deleteTurn(messages: List<ChatMessage>, selectedIndex: Int): List<ChatMessage> {
         if (selectedIndex !in messages.indices) return messages
-        val selected = messages[selectedIndex]
-        val userIndex = if (selected.role == "user") selectedIndex
+        val userIndex = if (messages[selectedIndex].role == "user") selectedIndex
             else (selectedIndex downTo 0).firstOrNull { messages[it].role == "user" } ?: selectedIndex
-        val endIndex = if (messages[userIndex].role == "user" &&
-            userIndex + 1 < messages.size && messages[userIndex + 1].role == "assistant"
-        ) userIndex + 1 else userIndex
+        val nextUserIndex = (userIndex + 1 until messages.size).firstOrNull { messages[it].role == "user" }
+        val endIndex = (nextUserIndex ?: messages.size) - 1
         return messages.filterIndexed { index, _ -> index !in userIndex..endIndex }
     }
 
@@ -79,15 +76,19 @@ object ConversationOperations {
     ): List<ChatMessage> {
         if (messages.isEmpty()) return emptyList()
         val available = (modelContextLimit(model) - responseReserve - estimatedTokens(systemPrompt)).coerceAtLeast(1)
-        var start = messages.size - 1
-        var used = messageTokens(messages.last())
-        while (start > 0) {
-            val previousCost = messageTokens(messages[start - 1])
-            if (used + previousCost > available) break
-            used += previousCost
-            start--
+        val latestUser = messages.indexOfLast { it.role == "user" }
+        if (latestUser < 0) return messages
+        var start = latestUser
+        var used = messages.drop(latestUser).sumOf(::messageTokens)
+        var currentTurnStart = latestUser
+        while (currentTurnStart > 0) {
+            val previousUser = (currentTurnStart - 1 downTo 0).firstOrNull { messages[it].role == "user" } ?: break
+            val previousTurnCost = messages.subList(previousUser, currentTurnStart).sumOf(::messageTokens)
+            if (used + previousTurnCost > available) break
+            used += previousTurnCost
+            start = previousUser
+            currentTurnStart = previousUser
         }
-        while (start > 0 && messages[start].role != "user") start--
         return messages.drop(start)
     }
 }
