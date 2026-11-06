@@ -81,7 +81,8 @@ object StructuredTextTools {
     }
     fun jsonFormat(store: WorkspaceStore, path: String): String {
         val value = JSONObjectOrArray(store.readText(path))
-        store.writeText(path, value.toString(2), TextWriteMode.OVERWRITE); return "Formatted JSON file."
+        val formatted = when (value) { is JSONObject -> value.toString(2); is JSONArray -> value.toString(2); else -> value.toString() }
+        store.writeText(path, formatted, TextWriteMode.OVERWRITE); return "Formatted JSON file."
     }
     fun jsonValidate(store: WorkspaceStore, path: String): String {
         JSONObjectOrArray(store.readText(path)); return "JSON is valid."
@@ -95,7 +96,7 @@ object StructuredTextTools {
                 else -> error("JSON path does not point to a container.")
             }
         }
-        return if (value is JSONObject || value is JSONArray) value.toString(2) else value.toString()
+        return when (value) { is JSONObject -> value.toString(2); is JSONArray -> value.toString(2); else -> value.toString() }
     }
     fun jsonSet(store: WorkspaceStore, path: String, pointer: String, rawValue: String): String {
         val root = JSONObjectOrArray(store.readText(path)); val keys = pointer.split('.').filter { it.isNotBlank() }
