@@ -58,10 +58,12 @@ object ConversationOperations {
         }
     }
 
+    fun messageTokens(message: ChatMessage): Int = estimatedTokens(message.content) + message.attachments.size * 1024
+
     fun estimateConversationTokens(
         messages: List<ChatMessage>,
         systemPrompt: String = ""
-    ): Int = estimatedTokens(systemPrompt) + messages.sumOf { estimatedTokens(it.content) }
+    ): Int = estimatedTokens(systemPrompt) + messages.sumOf(::messageTokens)
 
     /**
      * Keeps the newest complete suffix that fits the model budget. The system prompt and
@@ -77,9 +79,9 @@ object ConversationOperations {
         if (messages.isEmpty()) return emptyList()
         val available = (modelContextLimit(model) - responseReserve - estimatedTokens(systemPrompt)).coerceAtLeast(1)
         var start = messages.size - 1
-        var used = estimatedTokens(messages.last().content)
+        var used = messageTokens(messages.last())
         while (start > 0) {
-            val previousCost = estimatedTokens(messages[start - 1].content)
+            val previousCost = messageTokens(messages[start - 1])
             if (used + previousCost > available) break
             used += previousCost
             start--
