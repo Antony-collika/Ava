@@ -272,7 +272,7 @@ class ProviderClient(private val attachmentStore: AttachmentStore? = null) {
                 function?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }?.let { partial.name = it }
                 val fragment = function?.optString("arguments").orEmpty().takeIf { it != "null" }.orEmpty()
                 if (fragment.isNotEmpty()) partial.args.append(fragment)
-                emit(ProviderEvent.ToolCallDelta(callIndex, partial.id.ifBlank { null }, partial.name.ifBlank { null }, fragment))
+                emit(ProviderEvent.ToolCallDelta(callIndex, partial.id.takeIf { it.isNotBlank() }, partial.name.takeIf { it.isNotBlank() }, fragment))
             }
         }
     }
