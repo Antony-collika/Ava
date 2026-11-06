@@ -23,7 +23,8 @@ data class ChatMessage(
     val id: String,
     val role: String,
     val content: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val edited: Boolean = false
 )
 
 data class Conversation(
@@ -37,7 +38,8 @@ object ChatJson {
     fun encode(messages: List<ChatMessage>): String = JSONArray().apply {
         messages.forEach { message ->
             put(JSONObject().put("id", message.id).put("role", message.role)
-                .put("content", message.content).put("createdAt", message.createdAt))
+                .put("content", message.content).put("createdAt", message.createdAt)
+                .put("edited", message.edited))
         }
     }.toString()
 
@@ -50,7 +52,8 @@ object ChatJson {
                     id = item.optString("id", index.toString()),
                     role = item.optString("role", "user"),
                     content = item.optString("content"),
-                    createdAt = item.optLong("createdAt", 0L)
+                    createdAt = item.optLong("createdAt", 0L),
+                    edited = item.optBoolean("edited", false)
                 ))
             }
         }
