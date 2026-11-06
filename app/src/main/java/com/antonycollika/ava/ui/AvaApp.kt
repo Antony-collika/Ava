@@ -3,6 +3,7 @@ package com.antonycollika.ava.ui
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
@@ -55,6 +56,7 @@ fun AvaApp(
     conversationStore: ConversationStore,
     keyStore: SecureKeyStore,
     attachmentStore: AttachmentStore,
+    workspaceStore: WorkspaceStore,
     providerClient: ProviderClient
 ) {
     var settings by remember { mutableStateOf(settingsStore.load()) }
@@ -65,6 +67,13 @@ fun AvaApp(
     } }
     var showSettings by remember { mutableStateOf(!keyStore.hasKey(settings.provider.name)) }
     var showHistory by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    var workspaceMessage by remember { mutableStateOf<String?>(null) }
+    val workspacePicker = rememberLauncherForActivityResult(OpenDocumentTree()) { uri ->
+        if (uri != null) runCatching { workspaceStore.selectWorkspace(uri) }
+            .onSuccess { workspaceMessage = "Workspace folder selected." }
+            .onFailure { workspaceMessage = it.message ?: "Unable to access workspace." }
+    }
     var draft by remember { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<MessageAttachment>>(emptyList()) }
     val context = LocalContext.current
@@ -299,6 +308,8 @@ fun AvaApp(
                             IconButton(onClick = { darkTheme = !darkTheme; settingsStore.saveDarkTheme(darkTheme) }) {
                                 Text(if (darkTheme) "☼" else "☾")
                             }
+                            IconButton(onClick = { workspacePicker.launch(null) }) { Text("▣") }
+                            IconButton(onClick = { showTools = true }) { Text("⚙") }
                             IconButton(onClick = { inChatSearchVisible = !inChatSearchVisible; inChatSearch = "" }) { Text("⌕") }
                             IconButton(onClick = ::startNewChat) {
                                 Icon(Icons.Default.Add, contentDescription = "New chat")
@@ -374,6 +385,17 @@ fun AvaApp(
                             IconButton(onClick = { if (inChatMatches.isNotEmpty()) { searchMatchIndex = (searchMatchIndex - 1).mod(inChatMatches.size); scope.launch { listState.animateScrollToItem(inChatMatches[searchMatchIndex]) } } }) { Text("↑") }
                             IconButton(onClick = { if (inChatMatches.isNotEmpty()) { searchMatchIndex = (searchMatchIndex + 1).mod(inChatMatches.size); scope.launch { listState.animateScrollToItem(inChatMatches[searchMatchIndex]) } } }) { Text("↓") }
                         }
+                    }
+                    workspaceMessage?.let { message ->
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(message, modifier = Modifier.weight(1f))
+                                TextButton(onClick = { workspacePicker.launch(null) }) { Text("Choose folder") }
+                            }
+                        }
+                    }
+                    if (!workspaceStore.hasAccess()) {
+                        TextButton(onClick = { workspacePicker.launch(null) }) { Text("Choose a workspace to enable file tools") }
                     }
                     errorMessage?.let { message ->
                         Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
