@@ -12,21 +12,29 @@ data class ProviderSettings(
 class ProviderSettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("ava_provider_settings", Context.MODE_PRIVATE)
 
-    fun load(): ProviderSettings {
-        val provider = ProviderType.fromName(prefs.getString("provider", ProviderType.OPENAI.name))
+    fun load(providerOverride: ProviderType? = null): ProviderSettings {
+        val provider = providerOverride ?: ProviderType.fromName(prefs.getString("provider", ProviderType.OPENAI.name))
+        val suffix = provider.name
         return ProviderSettings(
             provider = provider,
-            model = prefs.getString("model", null)?.takeIf(String::isNotBlank) ?: provider.defaultModel,
-            baseUrl = prefs.getString("base_url", null)?.takeIf(String::isNotBlank) ?: provider.defaultBaseUrl,
-            systemPrompt = prefs.getString("system_prompt", "") ?: ""
+            model = prefs.getString("model_$suffix", null)?.takeIf(String::isNotBlank)
+                ?: prefs.getString("model", null)?.takeIf { providerOverride == null && String::isNotBlank(it) }
+                ?: provider.defaultModel,
+            baseUrl = prefs.getString("base_url_$suffix", null)?.takeIf(String::isNotBlank)
+                ?: prefs.getString("base_url", null)?.takeIf { providerOverride == null && String::isNotBlank(it) }
+                ?: provider.defaultBaseUrl,
+            systemPrompt = prefs.getString("system_prompt_$suffix", null)
+                ?: prefs.getString("system_prompt", "")?.takeIf { providerOverride == null }
+                ?: ""
         )
     }
 
     fun save(settings: ProviderSettings) {
-        prefs.edit().putString("provider", settings.provider.name)
-            .putString("model", settings.model.trim())
-            .putString("base_url", settings.baseUrl.trim().trimEnd('/'))
-            .putString("system_prompt", settings.systemPrompt)
+        val suffix = settings.provider.name
+        prefs.edit().putString("provider", suffix)
+            .putString("model_$suffix", settings.model.trim())
+            .putString("base_url_$suffix", settings.baseUrl.trim().trimEnd('/'))
+            .putString("system_prompt_$suffix", settings.systemPrompt)
             .apply()
     }
 }
