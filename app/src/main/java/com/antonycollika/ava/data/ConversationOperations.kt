@@ -37,7 +37,11 @@ object ConversationOperations {
         return messages.filterIndexed { index, _ -> index !in userIndex..endIndex }
     }
 
-    fun estimatedTokens(text: String): Int = if (text.isBlank()) 0 else (text.length + 3) / 4
+    fun estimatedTokens(text: String): Int {
+        if (text.isBlank()) return 0
+        val utf8Bytes = text.toByteArray(Charsets.UTF_8).size
+        return maxOf((text.length + 3) / 4, (utf8Bytes + 2) / 3)
+    }
 
     fun modelContextLimit(model: String): Int {
         val id = model.lowercase()
