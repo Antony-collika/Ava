@@ -105,9 +105,15 @@ class ToolRegistryStore(context: Context) {
         }.getOrDefault(ToolControl(definition.uid, true, ToolApproval.ASK, definition.defaultName, definition.defaultDescription))
     }
 
-    fun update(control: ToolControl): String? {
+    fun update(control: ToolControl, provider: ProviderType = ProviderType.OPENAI): String? {
         val definition = defaults[control.uid] ?: return "Unknown tool UID."
-        if (!NAME_PATTERN.matches(control.modelName)) return "Tool name must use letters, numbers, underscore or hyphen (1–64 characters)."
+        val validName = when (provider) {
+            ProviderType.GEMINI -> Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$").matches(control.modelName)
+            else -> Regex("^[A-Za-z0-9_-]{1,64}$").matches(control.modelName)
+        }
+        if (!validName) return if (provider == ProviderType.GEMINI)
+            "Gemini tool names must start with a letter or underscore and contain only letters, numbers or underscores."
+        else "Tool name must use letters, numbers, underscore or hyphen (1–64 characters)."
         if (all().any { it.uid != control.uid && it.modelName.equals(control.modelName, true) }) return "Another tool already uses this model name."
         if (control.modelDescription.isBlank()) return "Model description cannot be empty."
         prefs.edit().putString(control.uid, JSONObject().put("enabled", control.enabled)
@@ -137,7 +143,7 @@ class ToolRegistryStore(context: Context) {
 
     fun control(uid: String): ToolControl? = all().firstOrNull { it.uid == uid }
 
-    companion object { private val NAME_PATTERN = Regex("^[A-Za-z0-9_-]{1,64}$") }
+    companion object
 }
 
 data class ToolExecution(
